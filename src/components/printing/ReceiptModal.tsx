@@ -5,6 +5,7 @@ import { formatCurrency, formatDateTime } from '../../lib/formatters';
 import { Modal } from '../common/Modal';
 import { Button } from '../common/Button';
 import { Printer, CheckCircle2, AlertCircle, Copy, Check, Smartphone } from 'lucide-react';
+import { printReceiptOrInvoice } from '../../lib/printer';
 
 interface ReceiptModalProps {
   sale: Sale | null;
@@ -67,12 +68,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, isOpen, onClos
   };
 
   const handlePrint = () => {
-    document.body.classList.remove('print-mode-a4');
-    document.body.classList.add('print-mode-thermal');
-    window.print();
-    setTimeout(() => {
-      document.body.classList.remove('print-mode-thermal');
-    }, 1000);
+    printReceiptOrInvoice('printable-receipt', `Receipt_${sale.receiptNumber}`);
   };
 
   return (

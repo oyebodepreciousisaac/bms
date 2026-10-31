@@ -68,6 +68,14 @@ export const SalesListPage: React.FC = () => {
   }, []);
   const currentMonthStr = useMemo(() => todayStr.slice(0, 7), [todayStr]);
 
+  const handleSelectDateFilter = (option: DateFilterOption) => {
+    setDateFilter(option);
+    if (option === 'custom') {
+      if (!customStartDate) setCustomStartDate(weekAgoStr);
+      if (!customEndDate) setCustomEndDate(todayStr);
+    }
+  };
+
   // Filtered sales calculation
   const filteredSales = useMemo(() => {
     return sales.filter((s) => {
@@ -303,7 +311,7 @@ export const SalesListPage: React.FC = () => {
               <button
                 key={t.id}
                 type="button"
-                onClick={() => setDateFilter(t.id as DateFilterOption)}
+                onClick={() => handleSelectDateFilter(t.id as DateFilterOption)}
                 className={`px-3 py-1 rounded-full text-xs font-semibold transition-all whitespace-nowrap min-h-[30px] ${
                   dateFilter === t.id
                     ? 'bg-primary text-primary-foreground font-bold shadow-xs'
@@ -315,22 +323,38 @@ export const SalesListPage: React.FC = () => {
             ))}
           </div>
 
-          {/* Custom Date Inputs if 'custom' is active */}
+          {/* Custom Date Inputs with Explicit Mobile Labels and Presets */}
           {dateFilter === 'custom' && (
-            <div className="flex items-center gap-2 text-xs">
-              <input
-                type="date"
-                value={customStartDate}
-                onChange={(e) => setCustomStartDate(e.target.value)}
-                className="h-8 px-2 rounded border border-border bg-surface text-xs"
-              />
-              <span className="text-muted-foreground">to</span>
-              <input
-                type="date"
-                value={customEndDate}
-                onChange={(e) => setCustomEndDate(e.target.value)}
-                className="h-8 px-2 rounded border border-border bg-surface text-xs"
-              />
+            <div className="flex flex-wrap items-center gap-2 pt-1 sm:pt-0">
+              <div className="flex items-center gap-1.5 bg-card px-2.5 py-1 rounded-lg border border-border shadow-xs">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+                  <Calendar className="h-3 w-3 text-primary" />
+                  <span>From:</span>
+                </span>
+                <input
+                  type="date"
+                  value={customStartDate || weekAgoStr}
+                  onChange={(e) => setCustomStartDate(e.target.value)}
+                  className="h-7 px-1.5 rounded bg-muted/40 border border-border/80 text-xs font-semibold text-foreground focus:ring-1 focus:ring-primary outline-none"
+                  aria-label="Start date"
+                />
+              </div>
+
+              <span className="text-muted-foreground text-xs font-bold hidden xs:inline">to</span>
+
+              <div className="flex items-center gap-1.5 bg-card px-2.5 py-1 rounded-lg border border-border shadow-xs">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+                  <Calendar className="h-3 w-3 text-primary" />
+                  <span>To:</span>
+                </span>
+                <input
+                  type="date"
+                  value={customEndDate || todayStr}
+                  onChange={(e) => setCustomEndDate(e.target.value)}
+                  className="h-7 px-1.5 rounded bg-muted/40 border border-border/80 text-xs font-semibold text-foreground focus:ring-1 focus:ring-primary outline-none"
+                  aria-label="End date"
+                />
+              </div>
             </div>
           )}
         </div>

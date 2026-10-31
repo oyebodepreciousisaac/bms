@@ -19,6 +19,15 @@ export const Navbar: React.FC = () => {
     }
   }, []);
 
+  const handleCloseTour = () => {
+    try {
+      localStorage.setItem('bms_tour_seen', 'true');
+    } catch {
+      // Ignore private browsing storage restrictions
+    }
+    setIsTourOpen(false);
+  };
+
   const handleSignOut = () => {
     logout();
     navigate('/login');
@@ -105,7 +114,7 @@ export const Navbar: React.FC = () => {
       </header>
 
       {/* Interactive Onboarding Tour Modal */}
-      <OnboardingTourModal isOpen={isTourOpen} onClose={() => setIsTourOpen(false)} />
+      <OnboardingTourModal isOpen={isTourOpen} onClose={handleCloseTour} />
     </>
   );
 };

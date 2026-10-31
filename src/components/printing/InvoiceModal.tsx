@@ -14,6 +14,7 @@ import {
   Copy,
   Check,
 } from 'lucide-react';
+import { printReceiptOrInvoice } from '../../lib/printer';
 
 interface InvoiceModalProps {
   sale: Sale | null;
@@ -85,16 +86,8 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({ sale, isOpen, onClos
   };
 
   const handlePrint = () => {
-    // Add specific body class for print styling
-    document.body.classList.remove('print-mode-thermal', 'print-mode-a4');
-    document.body.classList.add(printFormat === 'thermal' ? 'print-mode-thermal' : 'print-mode-a4');
-
-    window.print();
-
-    // Clean up class after print
-    setTimeout(() => {
-      document.body.classList.remove('print-mode-thermal', 'print-mode-a4');
-    }, 1000);
+    const targetId = printFormat === 'thermal' ? 'printable-invoice-thermal' : 'printable-invoice-a4';
+    printReceiptOrInvoice(targetId, `Invoice_${invoiceNumber}`);
   };
 
   return (

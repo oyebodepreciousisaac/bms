@@ -29,6 +29,15 @@ export const MobileNav: React.FC = () => {
     navigate(path);
   };
 
+  const handleCloseTour = () => {
+    try {
+      localStorage.setItem('bms_tour_seen', 'true');
+    } catch {
+      // Ignore private storage error
+    }
+    setIsTourOpen(false);
+  };
+
   return (
     <>
       {/* Mobile Bottom Navigation Bar */}
@@ -309,7 +318,7 @@ export const MobileNav: React.FC = () => {
       )}
 
       {/* Onboarding Tour Modal */}
-      <OnboardingTourModal isOpen={isTourOpen} onClose={() => setIsTourOpen(false)} />
+      <OnboardingTourModal isOpen={isTourOpen} onClose={handleCloseTour} />
     </>
   );
 };

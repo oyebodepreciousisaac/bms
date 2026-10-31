@@ -140,12 +140,20 @@ export const OnboardingTourModal: React.FC<OnboardingTourModalProps> = ({ isOpen
 
   const step = steps[currentStep];
 
+  const handleDismiss = () => {
+    try {
+      localStorage.setItem('bms_tour_seen', 'true');
+    } catch {
+      // Ignore private browsing storage restrictions
+    }
+    onClose();
+  };
+
   const handleNext = () => {
     if (currentStep < steps.length - 1) {
       setCurrentStep((prev) => prev + 1);
     } else {
-      localStorage.setItem('bms_tour_seen', 'true');
-      onClose();
+      handleDismiss();
     }
   };
 
@@ -158,7 +166,7 @@ export const OnboardingTourModal: React.FC<OnboardingTourModalProps> = ({ isOpen
   return (
     <Modal
       isOpen={isOpen}
-      onClose={onClose}
+      onClose={handleDismiss}
       title="BMS v0.1 Quick Start Guide"
       description="Interactive operational walkthrough for bakery owners and counter staff"
       maxWidth="lg"
@@ -221,7 +229,7 @@ export const OnboardingTourModal: React.FC<OnboardingTourModalProps> = ({ isOpen
             type="button"
             variant="ghost"
             size="sm"
-            onClick={onClose}
+            onClick={handleDismiss}
             className="text-xs text-muted-foreground"
           >
             Skip Guide

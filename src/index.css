@@ -84,6 +84,13 @@
     overflow: visible !important;
   }
 
+  /* Completely unclip parent modal and scrolling containers */
+  #root, [role="dialog"], .fixed, .overflow-y-auto, .overflow-hidden {
+    overflow: visible !important;
+    max-height: none !important;
+    height: auto !important;
+  }
+
   /* Hide everything on the page by default */
   body * {
     visibility: hidden !important;
