@@ -1,104 +1,45 @@
 /**
- * BMS Isolated Document Printing Utility
- * Renders printable receipt or invoice in an isolated iframe.
- * Eliminates modal overflow clipping, scroll truncation, and background app bleed.
+ * BMS Robust DOM Print Utility
+ * Clones the printable receipt or invoice directly into a dedicated top-level
+ * print container on document.body.
+ * 
+ * Guarantees:
+ * 1. Zero blank pages (no 0x0 iframe rendering traps).
+ * 2. Zero truncation (completely bypasses React modal max-h-[90vh] & overflow-y-auto clipping).
+ * 3. Zero background app bleed (#root is display: none during print).
  */
-export function printReceiptOrInvoice(elementId: string, documentTitle: string = 'Receipt') {
+export function printReceiptOrInvoice(
+  elementId: string,
+  documentTitle: string = 'Receipt',
+  isA4: boolean = false
+) {
   const sourceElement = document.getElementById(elementId);
   if (!sourceElement) {
     window.print();
     return;
   }
 
-  // Reuse or create hidden printing iframe
-  let iframe = document.getElementById('bms-isolated-print-frame') as HTMLIFrameElement;
-  if (!iframe) {
-    iframe = document.createElement('iframe');
-    iframe.id = 'bms-isolated-print-frame';
-    iframe.style.position = 'fixed';
-    iframe.style.top = '-9999px';
-    iframe.style.left = '-9999px';
-    iframe.style.width = '0px';
-    iframe.style.height = '0px';
-    iframe.style.border = 'none';
-    iframe.style.opacity = '0';
-    iframe.style.pointerEvents = 'none';
-    document.body.appendChild(iframe);
+  // Get or create top-level print container directly on document.body
+  let printContainer = document.getElementById('bms-print-container');
+  if (!printContainer) {
+    printContainer = document.createElement('div');
+    printContainer.id = 'bms-print-container';
+    document.body.appendChild(printContainer);
   }
 
-  const frameDoc = iframe.contentWindow?.document;
-  if (!frameDoc) {
-    window.print();
-    return;
-  }
+  // Set mode and clone complete inner HTML
+  printContainer.className = isA4 ? 'print-mode-a4' : 'print-mode-thermal';
+  printContainer.innerHTML = sourceElement.innerHTML;
 
-  // Clone active document stylesheet and Tailwind definitions
-  const existingStyles = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
-    .map((tag) => tag.outerHTML)
-    .join('\n');
+  // Set document title for PDF print filename
+  const originalTitle = document.title;
+  document.title = documentTitle;
 
-  const contentHtml = sourceElement.innerHTML;
+  // Trigger browser print
+  window.print();
 
-  frameDoc.open();
-  frameDoc.write(`
-    <!DOCTYPE html>
-    <html lang="en">
-      <head>
-        <meta charset="utf-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>${documentTitle}</title>
-        ${existingStyles}
-        <style>
-          @page {
-            margin: 0mm !important;
-            size: auto;
-          }
-          html, body {
-            margin: 0 !important;
-            padding: 0 !important;
-            background: #ffffff !important;
-            color: #000000 !important;
-            width: 100% !important;
-            height: auto !important;
-            overflow: visible !important;
-          }
-          .isolated-print-container {
-            width: 76mm; /* Standard 80mm roll, fits 58mm roll seamlessly with minimal margins */
-            max-width: 100%;
-            margin: 0 auto;
-            padding: 3mm 2mm;
-            font-family: 'Courier New', Courier, monospace;
-            font-size: 11px;
-            line-height: 1.25;
-            background: #ffffff;
-            color: #000000;
-          }
-          /* Ensure all text and borders render dark and sharp */
-          * {
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-            color-adjust: exact !important;
-          }
-        </style>
-      </head>
-      <body>
-        <div class="isolated-print-container">
-          ${contentHtml}
-        </div>
-      </body>
-    </html>
-  `);
-  frameDoc.close();
-
-  // Allow styles and fonts to paint before triggering print dialog
+  // Restore title after print dialog closes
   setTimeout(() => {
-    try {
-      iframe.contentWindow?.focus();
-      iframe.contentWindow?.print();
-    } catch (err) {
-      console.warn('Iframe print error, falling back to window.print():', err);
-      window.print();
-    }
-  }, 250);
+    document.title = originalTitle;
+  }, 1000);
 }
-

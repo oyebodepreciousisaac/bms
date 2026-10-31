@@ -165,31 +165,37 @@ export const RawMaterialsPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Aggregate Overview KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <Card className="p-3.5 sm:p-4">
-          <span className="text-xs text-muted-foreground">Tracked Ingredients</span>
-          <div className="text-lg sm:text-xl font-bold text-foreground mt-1">
-            {rawMaterials.length} materials
+      {/* Aggregate Overview KPI Cards - Single Line Layout to Minimize Page Scroll */}
+      <div className="grid grid-cols-3 gap-2 sm:gap-3">
+        <Card className="p-2.5 sm:p-4 flex flex-col justify-between">
+          <span className="text-[10px] sm:text-xs text-muted-foreground font-medium truncate">
+            Tracked Ingredients
+          </span>
+          <div className="text-sm sm:text-xl font-bold text-foreground mt-0.5 sm:mt-1">
+            {rawMaterials.length} <span className="text-[10px] sm:text-xs font-normal text-muted-foreground">items</span>
           </div>
         </Card>
 
-        <Card className="p-3.5 sm:p-4">
-          <span className="text-xs text-muted-foreground">Reorder Alerts</span>
-          <div className="flex items-center gap-2 mt-1">
-            <span className={`text-lg sm:text-xl font-bold ${lowStockCount > 0 ? 'text-destructive' : 'text-success'}`}>
-              {lowStockCount} items low
+        <Card className="p-2.5 sm:p-4 flex flex-col justify-between">
+          <span className="text-[10px] sm:text-xs text-muted-foreground font-medium truncate">
+            Reorder Alerts
+          </span>
+          <div className="flex items-center gap-1.5 mt-0.5 sm:mt-1">
+            <span className={`text-sm sm:text-xl font-bold ${lowStockCount > 0 ? 'text-destructive' : 'text-success'}`}>
+              {lowStockCount} <span className="text-[10px] sm:text-xs font-normal">low</span>
             </span>
             {lowStockCount > 0 && (
-              <span className="h-2 w-2 rounded-full bg-destructive animate-pulse" />
+              <span className="h-1.5 w-1.5 sm:h-2 sm:w-2 rounded-full bg-destructive animate-pulse shrink-0" />
             )}
           </div>
         </Card>
 
-        <Card className="p-3.5 sm:p-4">
-          <span className="text-xs text-muted-foreground">Recent Stock Movements</span>
-          <div className="text-lg sm:text-xl font-bold text-foreground mt-1">
-            {rawMaterialMovements.length} logged
+        <Card className="p-2.5 sm:p-4 flex flex-col justify-between">
+          <span className="text-[10px] sm:text-xs text-muted-foreground font-medium truncate">
+            Stock Movements
+          </span>
+          <div className="text-sm sm:text-xl font-bold text-foreground mt-0.5 sm:mt-1">
+            {rawMaterialMovements.length} <span className="text-[10px] sm:text-xs font-normal text-muted-foreground">logged</span>
           </div>
         </Card>
       </div>

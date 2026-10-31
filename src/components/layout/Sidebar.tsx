@@ -40,7 +40,7 @@ export const Sidebar: React.FC = () => {
       to: '/products',
       label: 'Finished Goods',
       icon: <Package className="h-4 w-4" />,
-      roles: ['owner', 'salesperson'],
+      roles: ['owner', 'salesperson', 'distributor'],
     },
     {
       to: '/production',

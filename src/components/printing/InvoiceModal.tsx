@@ -87,7 +87,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({ sale, isOpen, onClos
 
   const handlePrint = () => {
     const targetId = printFormat === 'thermal' ? 'printable-invoice-thermal' : 'printable-invoice-a4';
-    printReceiptOrInvoice(targetId, `Invoice_${invoiceNumber}`);
+    printReceiptOrInvoice(targetId, `Invoice_${invoiceNumber}`, printFormat === 'a4');
   };
 
   return (

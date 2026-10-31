@@ -68,11 +68,20 @@
 
 /* =========================================================================
    Thermal Bluetooth Receipt & Official Invoice Print Stylesheet
-   Guarantees that ONLY the active receipt or invoice prints, with NO 
-   background app chrome, POS screens, or modal overlays leaking through.
+   Directly isolates #bms-print-container at document root.
+   Guarantees 100% full content rendering with zero clipping, zero blank
+   pages, and zero background app chrome leaking through.
    ========================================================================= */
+
+/* Onscreen view: hide the dedicated print clone container */
+@media screen {
+  #bms-print-container {
+    display: none !important;
+  }
+}
+
+/* Print mode: hide the entire React UI and render only the clean print container */
 @media print {
-  /* Set clean white page and zero margins */
   html, body {
     background: #ffffff !important;
     color: #000000 !important;
@@ -84,75 +93,53 @@
     overflow: visible !important;
   }
 
-  /* Completely unclip parent modal and scrolling containers */
-  #root, [role="dialog"], .fixed, .overflow-y-auto, .overflow-hidden {
-    overflow: visible !important;
-    max-height: none !important;
-    height: auto !important;
-  }
-
-  /* Hide everything on the page by default */
-  body * {
+  /* Hide the active web app completely */
+  #root,
+  header,
+  nav,
+  aside,
+  .fixed,
+  [role="dialog"],
+  .no-print {
+    display: none !important;
     visibility: hidden !important;
   }
 
-  /* Make ONLY the printable receipt or invoice and all its children visible */
-  #printable-receipt,
-  #printable-receipt *,
-  #printable-invoice-thermal,
-  #printable-invoice-thermal *,
-  #printable-invoice-a4,
-  #printable-invoice-a4 * {
+  /* Render the pure print container */
+  #bms-print-container {
+    display: block !important;
     visibility: visible !important;
-  }
-
-  /* Force printable targets to pin directly to the top-left of the physical paper */
-  #printable-receipt,
-  #printable-invoice-thermal,
-  #printable-invoice-a4 {
-    position: absolute !important;
-    left: 0 !important;
-    top: 0 !important;
-    margin: 0 !important;
-    background: #ffffff !important;
-    color: #000000 !important;
-    z-index: 99999999 !important;
-    box-shadow: none !important;
-  }
-
-  /* Specific 58mm / 80mm continuous thermal slip layout */
-  body.print-mode-thermal #printable-receipt,
-  body.print-mode-thermal #printable-invoice-thermal,
-  #printable-receipt {
-    max-width: 58mm !important;
-    width: 58mm !important;
-    padding: 2mm 1mm !important;
-    border: none !important;
+    position: static !important;
+    width: 76mm !important; /* Standard 80mm roll, fits 58mm seamlessly with minimal margins */
+    max-width: 100% !important;
+    margin: 0 auto !important;
+    padding: 3mm 2mm !important;
     font-family: 'Courier New', Courier, monospace !important;
     font-size: 11px !important;
     line-height: 1.25 !important;
-    display: block !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    overflow: visible !important;
   }
 
   /* A4 Formal Tax Invoice layout */
-  body.print-mode-a4 #printable-invoice-a4 {
-    max-width: 100% !important;
+  #bms-print-container.print-mode-a4 {
     width: 100% !important;
+    max-width: 100% !important;
     padding: 10mm 15mm !important;
-    border: 1px solid #d1d5db !important;
-    display: block !important;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif !important;
+    font-size: 12px !important;
+    line-height: 1.35 !important;
   }
 
-  /* Mutual exclusion between thermal and A4 when print mode class is present */
-  body.print-mode-thermal #printable-invoice-a4 {
-    display: none !important;
-    visibility: hidden !important;
-  }
-
-  body.print-mode-a4 #printable-receipt,
-  body.print-mode-a4 #printable-invoice-thermal {
-    display: none !important;
-    visibility: hidden !important;
+  /* Ensure all text and borders render dark and sharp */
+  #bms-print-container,
+  #bms-print-container * {
+    visibility: visible !important;
+    box-sizing: border-box !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
   }
 
   @page {

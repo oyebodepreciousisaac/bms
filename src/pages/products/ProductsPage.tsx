@@ -7,7 +7,7 @@ import { Modal } from '../../components/common/Modal';
 import { ExcelImportModal } from '../../components/common/ExcelImportModal';
 import { AddProductModal } from '../../components/common/AddProductModal';
 import { Product } from '../../types/domain.types';
-import { Package, Edit2, AlertTriangle, CheckCircle2, Search, FileSpreadsheet, PlusCircle } from 'lucide-react';
+import { Package, Edit2, AlertTriangle, CheckCircle2, Search, FileSpreadsheet, PlusCircle, ShoppingBag } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 export const ProductsPage: React.FC = () => {
@@ -45,10 +45,18 @@ export const ProductsPage: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground">
-            Finished Goods Inventory
+            {activeRole === 'distributor'
+              ? 'Bread Catalog & Wholesale Prices'
+              : activeRole === 'salesperson'
+              ? 'Bread Stock & Selling Prices'
+              : 'Finished Goods Inventory'}
           </h1>
           <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
-            Monitor bread stock levels and update unit prices across the bakery.
+            {activeRole === 'distributor'
+              ? 'Official bakery price list and available warehouse loaves for route dispatch.'
+              : activeRole === 'salesperson'
+              ? 'Real-time bakery stock balance and retail prices for counter selling.'
+              : 'Monitor bread stock levels and update unit prices across the bakery.'}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -73,12 +81,22 @@ export const ProductsPage: React.FC = () => {
               </Button>
             </>
           )}
-          <Link to="/production">
-            <Button size="sm" variant="outline" className="gap-1.5 text-xs">
-              <Package className="h-4 w-4" />
-              <span>Log Baked Batch</span>
-            </Button>
-          </Link>
+          {activeRole !== 'distributor' && (
+            <Link to="/production">
+              <Button size="sm" variant="outline" className="gap-1.5 text-xs">
+                <Package className="h-4 w-4" />
+                <span>Log Baked Batch</span>
+              </Button>
+            </Link>
+          )}
+          {activeRole === 'salesperson' && (
+            <Link to="/sales/new">
+              <Button size="sm" className="gap-1.5 text-xs shadow-xs">
+                <PlusCircle className="h-4 w-4" />
+                <span>New Sale (POS)</span>
+              </Button>
+            </Link>
+          )}
         </div>
       </div>
 
@@ -134,10 +152,12 @@ export const ProductsPage: React.FC = () => {
                   <th className="px-4 py-3 text-right">Current Stock</th>
                   <th className="px-4 py-3 text-center">Stock Status</th>
                   {activeRole === 'owner' && <th className="px-4 py-3 text-right">Action</th>}
+                  {activeRole === 'salesperson' && <th className="px-4 py-3 text-right">Action</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
                 {filteredProducts.map((product) => {
+                  const isOut = product.currentStock <= 0;
                   const isLow = product.currentStock <= product.minStockAlert;
                   return (
                     <tr key={product.id} className="hover:bg-muted/30 transition-colors">
@@ -162,8 +182,13 @@ export const ProductsPage: React.FC = () => {
                         <span className="text-[10px] text-muted-foreground">loaves</span>
                       </td>
                       <td className="px-4 py-3.5 text-center">
-                        {isLow ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-destructive-light text-destructive border border-destructive/20">
+                        {isOut ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-destructive/15 text-destructive border border-destructive/30">
+                            <AlertTriangle className="h-3 w-3" />
+                            Out of Stock
+                          </span>
+                        ) : isLow ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-900 border border-amber-300">
                             <AlertTriangle className="h-3 w-3" />
                             Low Stock
                           </span>
@@ -187,6 +212,20 @@ export const ProductsPage: React.FC = () => {
                           </Button>
                         </td>
                       )}
+                      {activeRole === 'salesperson' && (
+                        <td className="px-4 py-3.5 text-right">
+                          <Link to="/sales/new">
+                            <Button
+                              size="sm"
+                              disabled={isOut}
+                              className="h-7 text-xs px-2.5 gap-1 shadow-xs font-semibold"
+                            >
+                              <ShoppingBag className="h-3 w-3" />
+                              <span>Sell</span>
+                            </Button>
+                          </Link>
+                        </td>
+                      )}
                     </tr>
                   );
                 })}
@@ -197,6 +236,7 @@ export const ProductsPage: React.FC = () => {
           {/* Mobile Card List (< sm) */}
           <div className="block sm:hidden divide-y divide-border">
             {filteredProducts.map((product) => {
+              const isOut = product.currentStock <= 0;
               const isLow = product.currentStock <= product.minStockAlert;
               return (
                 <div key={product.id} className="p-3.5 space-y-2">
@@ -207,12 +247,16 @@ export const ProductsPage: React.FC = () => {
                         {product.category}
                       </span>
                     </div>
-                    {isLow ? (
-                      <span className="text-[11px] font-bold text-destructive px-2 py-0.5 rounded bg-destructive-light">
+                    {isOut ? (
+                      <span className="text-[11px] font-bold text-destructive px-2 py-0.5 rounded bg-destructive/15 border border-destructive/20">
+                        Out of Stock
+                      </span>
+                    ) : isLow ? (
+                      <span className="text-[11px] font-bold text-amber-800 px-2 py-0.5 rounded bg-amber-100 border border-amber-300">
                         Low Stock
                       </span>
                     ) : (
-                      <span className="text-[11px] font-semibold text-success px-2 py-0.5 rounded bg-success-light">
+                      <span className="text-[11px] font-semibold text-success px-2 py-0.5 rounded bg-success-light border border-success/20">
                         In Stock
                       </span>
                     )}
@@ -220,14 +264,14 @@ export const ProductsPage: React.FC = () => {
 
                   <div className="flex items-center justify-between bg-muted/40 p-2.5 rounded text-xs">
                     <div>
-                      <span className="text-muted-foreground">Price:</span>{' '}
+                      <span className="text-muted-foreground">Selling Price:</span>{' '}
                       <span className="font-bold text-foreground text-sm">
                         {formatCurrency(product.unitPrice)}
                       </span>
                     </div>
                     <div>
-                      <span className="text-muted-foreground">Available:</span>{' '}
-                      <span className={`font-bold ${isLow ? 'text-destructive' : 'text-foreground'}`}>
+                      <span className="text-muted-foreground">Warehouse:</span>{' '}
+                      <span className={`font-bold ${isOut ? 'text-destructive' : isLow ? 'text-amber-800' : 'text-foreground'}`}>
                         {product.currentStock} loaves
                       </span>
                     </div>
@@ -239,11 +283,26 @@ export const ProductsPage: React.FC = () => {
                         variant="outline"
                         size="sm"
                         onClick={() => handleOpenEditPrice(product)}
-                        className="w-full h-8 text-xs gap-1"
+                        className="w-full h-8 text-xs gap-1 font-semibold"
                       >
                         <Edit2 className="h-3 w-3" />
                         <span>Update Price</span>
                       </Button>
+                    </div>
+                  )}
+
+                  {activeRole === 'salesperson' && (
+                    <div className="pt-1">
+                      <Link to="/sales/new" className="w-full block">
+                        <Button
+                          size="sm"
+                          disabled={isOut}
+                          className="w-full h-8 text-xs font-bold gap-1.5 shadow-xs"
+                        >
+                          <ShoppingBag className="h-3.5 w-3.5" />
+                          <span>{isOut ? 'Out of Stock (Zero Left)' : 'Sell in POS'}</span>
+                        </Button>
+                      </Link>
                     </div>
                   )}
                 </div>

@@ -146,8 +146,8 @@ export const MobileNav: React.FC = () => {
                   }`
                 }
               >
-                <PlusCircle className="h-5 w-5 text-primary" />
-                <span className="font-bold text-primary">New Sale</span>
+                <PlusCircle className="h-5 w-5" />
+                <span>New Sale</span>
               </NavLink>
 
               <NavLink
