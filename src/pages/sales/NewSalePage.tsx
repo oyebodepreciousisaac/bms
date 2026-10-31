@@ -222,7 +222,7 @@ export const NewSalePage: React.FC = () => {
   };
 
   return (
-    <div className="space-y-4 pb-16 lg:pb-0">
+    <div className="space-y-4 pb-28 lg:pb-6">
       {/* Toast Alert for Stock Limits */}
       {stockWarning && (
         <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 max-w-md w-full px-4">
