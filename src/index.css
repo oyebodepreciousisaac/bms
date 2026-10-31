@@ -1,0 +1,122 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Central Semantic Tokens - Warm Bakery Hearth Palette (Provisional) */
+    --background: 35 25% 98%;
+    --foreground: 220 25% 14%;
+
+    --surface: 0 0% 100%;
+    --surface-foreground: 220 25% 14%;
+
+    /* Restrained Warm Bakery Accent (Terracotta / Golden Crust) */
+    --primary: 28 80% 46%;
+    --primary-foreground: 0 0% 100%;
+    --primary-hover: 28 85% 40%;
+    --primary-light: 30 85% 95%;
+
+    --muted: 35 15% 93%;
+    --muted-foreground: 220 10% 45%;
+
+    --border: 35 15% 88%;
+
+    /* Functional status tokens */
+    --success: 142 65% 36%;
+    --success-foreground: 0 0% 100%;
+    --success-light: 142 60% 94%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --destructive-light: 0 80% 96%;
+
+    --warning: 38 92% 46%;
+    --warning-foreground: 0 0% 100%;
+    --warning-light: 38 90% 95%;
+
+    --radius: 0.5rem;
+  }
+}
+
+/* Custom scrollbar styling for comfortable desktop browsing */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: hsl(var(--background));
+}
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--border));
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground));
+}
+
+/* Thermal Bluetooth receipt & Invoice print stylesheet */
+@media print {
+  body {
+    background: white !important;
+    color: black !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* Hide app navigation, chrome, modal overlays, buttons and non-printable elements */
+  header,
+  aside,
+  nav,
+  button,
+  .no-print {
+    display: none !important;
+  }
+
+  /* Make sure modal overlay doesn't dim or block printed document */
+  .fixed {
+    position: static !important;
+    background: transparent !important;
+    padding: 0 !important;
+  }
+
+  /* Toggle between thermal slip and A4 when printing */
+  body.print-mode-thermal #printable-invoice-a4 {
+    display: none !important;
+  }
+
+  body.print-mode-a4 #printable-invoice-thermal {
+    display: none !important;
+  }
+
+  /* Thermal printer styles: 58mm / 80mm continuous roll */
+  #printable-receipt,
+  #printable-invoice-thermal {
+    border: none !important;
+    box-shadow: none !important;
+    padding: 2mm 1mm !important;
+    max-width: 58mm !important;
+    width: 100% !important;
+    margin: 0 auto !important;
+    font-family: monospace, 'Courier New', Courier !important;
+    font-size: 11px !important;
+    line-height: 1.25 !important;
+    display: block !important;
+  }
+
+  /* A4 Invoice print styles */
+  #printable-invoice-a4 {
+    border: 1px solid #e5e7eb !important;
+    box-shadow: none !important;
+    padding: 15mm !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    display: block !important;
+  }
+
+  @page {
+    margin: 0;
+    size: auto;
+  }
+}
+

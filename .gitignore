@@ -1,0 +1,17 @@
+node_modules/
+.next/
+dist/
+build/
+coverage/
+.tmp/
+.env
+.env.*
+!.env.example
+.DS_Store
+*.tsbuildinfo
+
+# Internal tooling & agent skills (retained locally, excluded from public repo)
+skill-creator/
+.agents/
+AGENTS.md
+START-HERE.md
