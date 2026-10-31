@@ -200,22 +200,23 @@ export const CustomersPage: React.FC = () => {
       {/* Search and Debt Filter Pills */}
       <Card className="p-3 sm:p-4">
         <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between">
-          <div className="relative flex-1 max-w-sm">
+          <div className="relative flex-1 w-full max-w-md">
             <input
               type="text"
               placeholder="Search Crown, Big House, phone..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full h-9 px-3 pl-9 pr-8 rounded-md border border-border bg-surface text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+              className="w-full h-9.5 px-3 pl-10 pr-9 rounded-xl border border-border bg-surface text-xs font-medium text-foreground placeholder:text-muted-foreground transition-all hover:border-primary/70 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary shadow-xs"
             />
-            <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
             {searchQuery && (
               <button
                 type="button"
                 onClick={() => setSearchQuery('')}
-                className="absolute right-2.5 top-2.5 text-muted-foreground hover:text-foreground"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                title="Clear search"
               >
-                <X className="h-4 w-4" />
+                <X className="h-3.5 w-3.5" />
               </button>
             )}
           </div>

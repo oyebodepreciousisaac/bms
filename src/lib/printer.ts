@@ -101,3 +101,4 @@ export function printReceiptOrInvoice(elementId: string, documentTitle: string =
     }
   }, 250);
 }
+
