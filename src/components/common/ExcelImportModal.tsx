@@ -45,7 +45,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
   onClose,
   defaultTab = 'products',
 }) => {
-  const { products, customers, addCustomer } = useStore();
+  const { products, customers, addCustomer, addProduct } = useStore();
 
   const [activeImportType, setActiveImportType] = useState<'products' | 'customers'>(defaultTab);
   const [parsedProductRows, setParsedProductRows] = useState<ParsedProductRow[]>([]);
@@ -53,6 +53,15 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
   const [fileName, setFileName] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [successMessage, setSuccessMessage] = useState<string>('');
+
+  // Defensive sanitization preventing CSV / Excel formula injection (CWE-1236)
+  const sanitizeInputText = (raw: any): string => {
+    const str = String(raw || '').trim();
+    if (/^[=+\-@\t\r]/.test(str)) {
+      return `'${str}`;
+    }
+    return str;
+  };
 
   // 1. Download official standardized template based on active tab
   const handleDownloadTemplate = async () => {
@@ -127,8 +136,8 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
         const rows: ParsedProductRow[] = [];
         sheet.eachRow((row, rowNumber) => {
           if (rowNumber === 1) return; // Skip headers
-          const name = String(row.getCell(1).value || '').trim();
-          const category = String(row.getCell(2).value || 'General').trim();
+          const name = sanitizeInputText(row.getCell(1).value);
+          const category = sanitizeInputText(row.getCell(2).value) || 'General';
           const price = parseFloat(String(row.getCell(3).value || '0'));
           const stock = parseInt(String(row.getCell(4).value || '0'), 10);
           const alert = parseInt(String(row.getCell(5).value || '20'), 10);
@@ -150,9 +159,9 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
           rows.push({
             name,
             category,
-            unitPrice: price || 0,
-            initialStock: stock || 0,
-            minAlert: alert || 20,
+            unitPrice: Math.max(0, price || 0),
+            initialStock: Math.max(0, stock || 0),
+            minAlert: Math.max(0, alert || 20),
             isValid,
             errorReason,
           });
@@ -162,10 +171,10 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
         const rows: ParsedCustomerRow[] = [];
         sheet.eachRow((row, rowNumber) => {
           if (rowNumber === 1) return; // Skip headers
-          const name = String(row.getCell(1).value || '').trim();
-          const phone = String(row.getCell(2).value || '').trim();
+          const name = sanitizeInputText(row.getCell(1).value);
+          const phone = sanitizeInputText(row.getCell(2).value);
           const debt = parseFloat(String(row.getCell(3).value || '0'));
-          const notes = String(row.getCell(4).value || '').trim();
+          const notes = sanitizeInputText(row.getCell(4).value);
 
           let isValid = true;
           let errorReason = '';
@@ -181,7 +190,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
           rows.push({
             name,
             phone: phone || 'No phone recorded',
-            currentDebt: debt || 0,
+            currentDebt: Math.max(0, debt || 0),
             notes,
             isValid,
             errorReason,
@@ -203,14 +212,12 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
       if (validRows.length === 0) return;
 
       validRows.forEach((r) => {
-        products.push({
-          id: `prod-imp-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+        addProduct({
           name: r.name,
           category: r.category,
           unitPrice: r.unitPrice,
-          currentStock: r.initialStock,
+          initialStock: r.initialStock,
           minStockAlert: r.minAlert,
-          isActive: true,
         });
       });
 

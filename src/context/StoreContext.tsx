@@ -116,7 +116,14 @@ interface StoreContextType {
   }) => DistributorAllocation;
   reconcileAllocation: (params: {
     allocationId: string;
-    items: { productId: string; quantitySold: number; quantityReturned: number }[];
+    items: {
+      productId: string;
+      quantitySold: number;
+      quantityReturned: number;
+      quantityDamaged?: number;
+      quantityShortage?: number;
+    }[];
+    shortageResolution?: 'debited_to_driver' | 'bakery_loss_approved' | 'none';
     notes?: string;
   }) => void;
 
@@ -363,8 +370,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const updateProductPrice = (productId: string, newPrice: number) => {
+    const safePrice = Math.max(0, isNaN(newPrice) ? 0 : newPrice);
     setProducts((prev) =>
-      prev.map((p) => (p.id === productId ? { ...p, unitPrice: newPrice } : p))
+      prev.map((p) => (p.id === productId ? { ...p, unitPrice: safePrice } : p))
     );
   };
 
@@ -383,11 +391,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }): Product => {
     const newProduct: Product = {
       id: `prod-${Date.now()}`,
-      name,
-      category,
-      unitPrice,
-      currentStock: initialStock,
-      minStockAlert,
+      name: name.trim(),
+      category: category.trim(),
+      unitPrice: Math.max(0, isNaN(unitPrice) ? 0 : unitPrice),
+      currentStock: Math.max(0, isNaN(initialStock) ? 0 : initialStock),
+      minStockAlert: Math.max(0, isNaN(minStockAlert) ? 20 : minStockAlert),
       isActive: true,
     };
     setProducts((prev) => [newProduct, ...prev]);
@@ -447,11 +455,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       };
     });
 
-    const balanceAmount = Math.max(0, totalAmount - paidAmount);
+    const safePaidAmount = Math.max(0, isNaN(paidAmount) ? 0 : paidAmount);
+    const balanceAmount = Math.max(0, totalAmount - safePaidAmount);
     let paymentStatus: 'paid' | 'partial' | 'credit' = 'paid';
-    if (paidAmount === 0) {
+    if (safePaidAmount === 0) {
       paymentStatus = 'credit';
-    } else if (paidAmount < totalAmount) {
+    } else if (safePaidAmount < totalAmount) {
       paymentStatus = 'partial';
     }
 
@@ -467,7 +476,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       customerName: customer.name,
       items: saleItems,
       totalAmount,
-      paidAmount,
+      paidAmount: safePaidAmount,
       balanceAmount,
       paymentStatus,
       paymentMethod,
@@ -552,10 +561,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     paymentMethod: PaymentMethod;
     referenceNote?: string;
   }) => {
+    const safeAmount = Math.max(0, isNaN(amount) ? 0 : amount);
+    if (safeAmount <= 0) return;
+
     const sale = sales.find((s) => s.id === saleId);
     if (!sale) return;
 
-    const newPaidAmount = sale.paidAmount + amount;
+    const newPaidAmount = sale.paidAmount + safeAmount;
     const newBalance = Math.max(0, sale.totalAmount - newPaidAmount);
     const newStatus = newBalance === 0 ? 'paid' : 'partial';
     const recordedByName = currentUser ? currentUser.name : activeRole === 'owner' ? 'Owner (Admin)' : 'Sales Agent';
@@ -578,7 +590,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setCustomers((prev) =>
       prev.map((c) =>
         c.id === sale.customerId
-          ? { ...c, currentDebt: Math.max(0, c.currentDebt - amount) }
+          ? { ...c, currentDebt: Math.max(0, c.currentDebt - safeAmount) }
           : c
       )
     );
@@ -590,7 +602,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       receiptNumber: sale.receiptNumber,
       customerId: sale.customerId,
       customerName: sale.customerName,
-      amount,
+      amount: safeAmount,
       method: paymentMethod,
       referenceNote: referenceNote || 'Settlement payment against outstanding balance',
       recordedBy: recordedByName,
@@ -772,22 +784,36 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const reconcileAllocation = ({
     allocationId,
     items,
+    shortageResolution = 'none',
     notes,
   }: {
     allocationId: string;
-    items: { productId: string; quantitySold: number; quantityReturned: number }[];
+    items: {
+      productId: string;
+      quantitySold: number;
+      quantityReturned: number;
+      quantityDamaged?: number;
+      quantityShortage?: number;
+    }[];
+    shortageResolution?: 'debited_to_driver' | 'bakery_loss_approved' | 'none';
     notes?: string;
   }) => {
     const alloc = allocations.find((a) => a.id === allocationId);
     if (!alloc) return;
 
     let totalCollectedValue = 0;
+    let shortageTotalValue = 0;
 
     // Return unsold loaves back into bakehouse finished goods stock
     items.forEach((item) => {
       const prod = products.find((p) => p.id === item.productId);
       const unitPrice = prod ? prod.unitPrice : 0;
       totalCollectedValue += item.quantitySold * unitPrice;
+
+      const shortage = item.quantityShortage || 0;
+      if (shortage > 0) {
+        shortageTotalValue += shortage * unitPrice;
+      }
 
       if (item.quantityReturned > 0) {
         setProducts((prev) =>
@@ -799,6 +825,32 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         );
       }
     });
+
+    // If shortage was converted to driver debt, link directly to customer debtor ledger
+    if (shortageResolution === 'debited_to_driver' && shortageTotalValue > 0) {
+      setCustomers((prev) => {
+        const existing = prev.find(
+          (c) => c.name.toLowerCase() === alloc.distributorName.toLowerCase()
+        );
+        if (existing) {
+          return prev.map((c) =>
+            c.id === existing.id
+              ? { ...c, currentDebt: c.currentDebt + shortageTotalValue }
+              : c
+          );
+        } else {
+          const newCust: Customer = {
+            id: `cust-dist-${Date.now()}`,
+            name: `${alloc.distributorName} (Distributor)`,
+            phone: 'Route Account',
+            currentDebt: shortageTotalValue,
+            notes: `Route bread shortage debt recorded on allocation reconciliation`,
+            isActive: true,
+          };
+          return [...prev, newCust];
+        }
+      });
+    }
 
     setAllocations((prev) =>
       prev.map((a) => {
@@ -813,11 +865,15 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 ...existingItem,
                 quantitySold: update.quantitySold,
                 quantityReturned: update.quantityReturned,
+                quantityDamaged: update.quantityDamaged || 0,
+                quantityShortage: update.quantityShortage || 0,
               };
             }
             return existingItem;
           }),
           totalCollectedValue,
+          shortageTotalValue,
+          shortageResolution,
           notes: notes || a.notes,
         };
       })

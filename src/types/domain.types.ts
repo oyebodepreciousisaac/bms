@@ -125,6 +125,8 @@ export interface DistributorAllocationItem {
   quantityAllocated: number;
   quantitySold: number;
   quantityReturned: number;
+  quantityDamaged?: number;
+  quantityShortage?: number;
 }
 
 export interface DistributorAllocation {
@@ -136,6 +138,8 @@ export interface DistributorAllocation {
   items: DistributorAllocationItem[];
   totalAllocatedValue: number;
   totalCollectedValue: number;
+  shortageTotalValue?: number;
+  shortageResolution?: 'debited_to_driver' | 'bakery_loss_approved' | 'none';
   notes?: string;
 }
 
