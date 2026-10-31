@@ -114,6 +114,17 @@ interface StoreContextType {
     notes?: string;
     items: { productId: string; quantityAllocated: number }[];
   }) => DistributorAllocation;
+  submitAllocationForVerification: (params: {
+    allocationId: string;
+    items: {
+      productId: string;
+      quantitySold: number;
+      quantityReturned: number;
+      quantityDamaged?: number;
+      quantityShortage?: number;
+    }[];
+    notes?: string;
+  }) => void;
   reconcileAllocation: (params: {
     allocationId: string;
     items: {
@@ -781,6 +792,59 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return newAllocation;
   };
 
+  const submitAllocationForVerification = ({
+    allocationId,
+    items,
+    notes,
+  }: {
+    allocationId: string;
+    items: {
+      productId: string;
+      quantitySold: number;
+      quantityReturned: number;
+      quantityDamaged?: number;
+      quantityShortage?: number;
+    }[];
+    notes?: string;
+  }) => {
+    const alloc = allocations.find((a) => a.id === allocationId);
+    if (!alloc) return;
+
+    let reportedCollectedValue = 0;
+    items.forEach((item) => {
+      const prod = products.find((p) => p.id === item.productId);
+      const unitPrice = prod ? prod.unitPrice : 0;
+      reportedCollectedValue += item.quantitySold * unitPrice;
+    });
+
+    setAllocations((prev) =>
+      prev.map((a) => {
+        if (a.id !== allocationId) return a;
+        return {
+          ...a,
+          status: 'submitted',
+          submittedBy: currentUser ? currentUser.name : 'Driver',
+          submittedAt: new Date().toISOString(),
+          totalCollectedValue: reportedCollectedValue,
+          items: a.items.map((existingItem) => {
+            const update = items.find((i) => i.productId === existingItem.productId);
+            if (update) {
+              return {
+                ...existingItem,
+                quantitySold: update.quantitySold,
+                quantityReturned: update.quantityReturned,
+                quantityDamaged: update.quantityDamaged || 0,
+                quantityShortage: update.quantityShortage || 0,
+              };
+            }
+            return existingItem;
+          }),
+          notes: notes || a.notes,
+        };
+      })
+    );
+  };
+
   const reconcileAllocation = ({
     allocationId,
     items,
@@ -858,6 +922,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         return {
           ...a,
           status: 'reconciled',
+          approvedBy: currentUser ? currentUser.name : 'Owner (Admin)',
+          approvedAt: new Date().toISOString(),
           items: a.items.map((existingItem) => {
             const update = items.find((i) => i.productId === existingItem.productId);
             if (update) {
@@ -910,6 +976,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         recordRawMaterialMovement,
         allocations,
         createAllocation,
+        submitAllocationForVerification,
         reconcileAllocation,
         resetDemoData,
         clearAllDataToFreshBakery,

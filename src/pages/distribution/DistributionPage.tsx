@@ -19,9 +19,16 @@ import {
 } from 'lucide-react';
 
 export const DistributionPage: React.FC = () => {
-  const { allocations, products, createAllocation, reconcileAllocation, activeRole } = useStore();
+  const {
+    allocations,
+    products,
+    createAllocation,
+    submitAllocationForVerification,
+    reconcileAllocation,
+    activeRole,
+  } = useStore();
 
-  const [filterStatus, setFilterStatus] = useState<'all' | 'assigned' | 'reconciled'>('all');
+  const [filterStatus, setFilterStatus] = useState<'all' | 'assigned' | 'submitted' | 'reconciled'>('all');
   const [isNewAllocationModalOpen, setIsNewAllocationModalOpen] = useState(false);
   const [allocationForReconcile, setAllocationForReconcile] = useState<DistributorAllocation | null>(null);
 
@@ -128,13 +135,27 @@ export const DistributionPage: React.FC = () => {
       return;
     }
 
-    reconcileAllocation({
-      allocationId: allocationForReconcile.id,
-      items: formattedItems,
-      shortageResolution:
-        totalMissing > 0 && shortageResolution !== 'must_return' ? shortageResolution : 'none',
-      notes: reconcileNotes,
-    });
+    // Role-Based Two-Step Custody Handover:
+    // If a driver submits, it enters 'submitted' status awaiting admin sign-off.
+    // If the Bakery Owner reconciles, it is officially signed off and inventory returned.
+    if (activeRole === 'distributor') {
+      submitAllocationForVerification({
+        allocationId: allocationForReconcile.id,
+        items: formattedItems,
+        notes: reconcileNotes,
+      });
+      alert(
+        'Shift return submitted successfully! The bakery manager will count returned loaves and verify cash remittance before final approval.'
+      );
+    } else {
+      reconcileAllocation({
+        allocationId: allocationForReconcile.id,
+        items: formattedItems,
+        shortageResolution:
+          totalMissing > 0 && shortageResolution !== 'must_return' ? shortageResolution : 'none',
+        notes: reconcileNotes,
+      });
+    }
 
     setAllocationForReconcile(null);
   };
@@ -188,8 +209,13 @@ export const DistributionPage: React.FC = () => {
             { id: 'all', label: 'All Routes', count: allocations.length },
             {
               id: 'assigned',
-              label: 'In Transit / Pending',
+              label: 'In Transit',
               count: allocations.filter((a) => a.status === 'assigned').length,
+            },
+            {
+              id: 'submitted',
+              label: 'Awaiting Approval',
+              count: allocations.filter((a) => a.status === 'submitted').length,
             },
             {
               id: 'reconciled',
@@ -262,9 +288,33 @@ export const DistributionPage: React.FC = () => {
                           : `Loss: ${formatCurrency(alloc.shortageTotalValue)} (Approved)`}
                       </span>
                     ) : null}
-                    <Badge variant={alloc.status === 'reconciled' ? 'success' : 'warning'}>
-                      {alloc.status === 'reconciled' ? 'Reconciled & Settled' : 'In Transit / Custody'}
+                    <Badge
+                      variant={
+                        alloc.status === 'reconciled'
+                          ? 'success'
+                          : alloc.status === 'submitted'
+                          ? 'warning'
+                          : 'default'
+                      }
+                    >
+                      {alloc.status === 'reconciled'
+                        ? 'Reconciled & Settled'
+                        : alloc.status === 'submitted'
+                        ? 'Awaiting Admin Approval'
+                        : 'In Transit / Custody'}
                     </Badge>
+
+                    {/* Action buttons based on Maker-Checker Role & Status */}
+                    {alloc.status === 'submitted' && activeRole === 'owner' && (
+                      <Button
+                        size="sm"
+                        onClick={() => handleOpenReconcile(alloc)}
+                        className="h-7 text-xs px-2.5 gap-1 bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs"
+                      >
+                        <ClipboardCheck className="h-3.5 w-3.5" />
+                        <span>Verify & Sign Off</span>
+                      </Button>
+                    )}
 
                     {alloc.status === 'assigned' && (
                       <Button
@@ -273,7 +323,9 @@ export const DistributionPage: React.FC = () => {
                         className="h-7 text-xs px-2.5 gap-1 bg-amber-600 hover:bg-amber-700 text-white shadow-xs"
                       >
                         <ClipboardCheck className="h-3.5 w-3.5" />
-                        <span>Reconcile Shift</span>
+                        <span>
+                          {activeRole === 'distributor' ? 'Submit Shift Return' : 'Reconcile Shift'}
+                        </span>
                       </Button>
                     )}
                   </div>
@@ -486,8 +538,16 @@ export const DistributionPage: React.FC = () => {
         <Modal
           isOpen={true}
           onClose={() => setAllocationForReconcile(null)}
-          title={`Reconcile Shift: ${allocationForReconcile.distributorName}`}
-          description="Enter verified route sales, unsold loaves returned, and audit any missing stock."
+          title={
+            activeRole === 'distributor'
+              ? `Submit Shift Return: ${allocationForReconcile.distributorName}`
+              : `Verify & Reconcile Shift: ${allocationForReconcile.distributorName}`
+          }
+          description={
+            activeRole === 'distributor'
+              ? 'Log loaves sold and unsold bread in your crates. The bakery manager must verify counts before sign-off.'
+              : 'Count physical returned loaves, audit cash remittance, and authorize any driver shortages.'
+          }
           maxWidth="lg"
         >
           {(() => {
@@ -753,9 +813,11 @@ export const DistributionPage: React.FC = () => {
                         ? 'Invalid Quantities'
                         : totalMissingLoaves > 0 && shortageResolution === 'must_return'
                         ? `Locked: ${totalMissingLoaves} Loaves Missing`
+                        : activeRole === 'distributor'
+                        ? 'Submit for Manager Approval'
                         : totalMissingLoaves > 0 && shortageResolution === 'debited_to_driver'
-                        ? `Reconcile & Debit ${formatCurrency(totalMissingValue)}`
-                        : 'Complete Reconciliation'}
+                        ? `Sign Off & Debit Shortage (${formatCurrency(totalMissingValue)})`
+                        : 'Verify & Sign Off Reconciliation'}
                     </span>
                   </Button>
                 </div>

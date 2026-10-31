@@ -245,3 +245,4 @@ export const OnboardingTourModal: React.FC<OnboardingTourModalProps> = ({ isOpen
     </Modal>
   );
 };
+

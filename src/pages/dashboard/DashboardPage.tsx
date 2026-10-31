@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useStore } from '../../context/StoreContext';
 import { formatCurrency, formatDateTime } from '../../lib/formatters';
 import { Card, CardHeader, CardTitle, CardContent } from '../../components/common/Card';
@@ -22,34 +22,59 @@ import {
   Clock,
   ArrowRight,
   Users,
+  Calendar,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import ExcelJS from 'exceljs';
+
+export type DashboardPeriod = 'today' | 'yesterday' | 'week' | 'month' | 'all';
 
 export const DashboardPage: React.FC = () => {
   const { sales, products, rawMaterials, customers, productionBatches, allocations } = useStore();
   const [selectedSaleForReceipt, setSelectedSaleForReceipt] = useState<Sale | null>(null);
   const [selectedSaleForInvoice, setSelectedSaleForInvoice] = useState<Sale | null>(null);
   const [isImportModalOpen, setIsImportModalOpen] = useState<boolean>(false);
+  const [dashboardPeriod, setDashboardPeriod] = useState<DashboardPeriod>('today');
 
-  // Operational aggregates
-  const totalSales = sales.reduce((acc, curr) => acc + curr.totalAmount, 0);
-  const totalPaid = sales.reduce((acc, curr) => acc + curr.paidAmount, 0);
-  const totalOutstanding = sales.reduce((acc, curr) => acc + curr.balanceAmount, 0);
-  const totalUnitsSold = sales.reduce(
+  // Filter sales dynamically by selected period
+  const periodSales = useMemo(() => {
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const startOfYesterday = startOfToday - 86400000;
+    const startOfWeek = startOfToday - 7 * 86400000;
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+
+    return sales.filter((s) => {
+      const saleTime = new Date(s.createdAt).getTime();
+      if (dashboardPeriod === 'today') return saleTime >= startOfToday;
+      if (dashboardPeriod === 'yesterday') return saleTime >= startOfYesterday && saleTime < startOfToday;
+      if (dashboardPeriod === 'week') return saleTime >= startOfWeek;
+      if (dashboardPeriod === 'month') return saleTime >= startOfMonth;
+      return true; // 'all'
+    });
+  }, [sales, dashboardPeriod]);
+
+  // Operational aggregates for selected period
+  const totalSales = periodSales.reduce((acc, curr) => acc + curr.totalAmount, 0);
+  const totalPaid = periodSales.reduce((acc, curr) => acc + curr.paidAmount, 0);
+  const totalOutstanding = periodSales.reduce((acc, curr) => acc + curr.balanceAmount, 0);
+  const totalUnitsSold = periodSales.reduce(
     (acc, curr) => acc + curr.items.reduce((sum, item) => sum + item.quantity, 0),
     0
   );
+
+  // All-time receivables from debtor records
+  const allTimeCustomerDebt = customers.reduce((acc, curr) => acc + curr.currentDebt, 0);
   const totalFinishedStock = products.reduce((acc, curr) => acc + curr.currentStock, 0);
 
-  // Payment channel totals for overview chart
-  const cashPaid = sales
+  // Payment channel totals for overview chart in selected period
+  const cashPaid = periodSales
     .filter((s) => s.paymentMethod === 'cash')
     .reduce((sum, s) => sum + s.paidAmount, 0);
-  const transferPaid = sales
+  const transferPaid = periodSales
     .filter((s) => s.paymentMethod === 'transfer')
     .reduce((sum, s) => sum + s.paidAmount, 0);
-  const posPaid = sales
+  const posPaid = periodSales
     .filter((s) => s.paymentMethod === 'pos')
     .reduce((sum, s) => sum + s.paidAmount, 0);
 
@@ -213,6 +238,14 @@ export const DashboardPage: React.FC = () => {
     window.URL.revokeObjectURL(url);
   };
 
+  const periodLabels: Record<DashboardPeriod, string> = {
+    today: 'Today',
+    yesterday: 'Yesterday',
+    week: 'Past 7 Days',
+    month: 'This Month',
+    all: 'All Time',
+  };
+
   return (
     <div className="space-y-5 sm:space-y-6">
       {/* Top Banner / Actions */}
@@ -222,7 +255,7 @@ export const DashboardPage: React.FC = () => {
             BMS Operations Dashboard
           </h1>
           <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
-            Real-time daily register: revenue, payments, debtor balances, and stock.
+            Real-time bakery register: revenue, payments, debtor balances, and stock.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -243,11 +276,41 @@ export const DashboardPage: React.FC = () => {
         </div>
       </div>
 
+      {/* Date Period Selector for Busy Heavy-Volume Bakeries */}
+      <div className="flex flex-wrap items-center justify-between gap-2.5 p-2 rounded-xl bg-card border border-border/80 shadow-xs">
+        <div className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground px-1">
+          <Calendar className="h-4 w-4 text-primary" />
+          <span>Operational Period:</span>
+        </div>
+        <div className="flex flex-wrap items-center gap-1 bg-muted/60 p-1 rounded-lg border border-border/60">
+          {(['today', 'yesterday', 'week', 'month', 'all'] as const).map((period) => (
+            <button
+              key={period}
+              type="button"
+              onClick={() => setDashboardPeriod(period)}
+              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                dashboardPeriod === period
+                  ? 'bg-primary text-white shadow-xs font-semibold'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-card/70'
+              }`}
+            >
+              {period === 'today' && 'Today'}
+              {period === 'yesterday' && 'Yesterday'}
+              {period === 'week' && 'Past 7 Days'}
+              {period === 'month' && 'This Month'}
+              {period === 'all' && 'All Time'}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* KPI Cards Grid (Fluid & Mobile Optimized) */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         <Card className="p-3.5 sm:p-5">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-muted-foreground truncate">Total Gross Sales</span>
+            <span className="text-xs font-medium text-muted-foreground truncate">
+              {periodLabels[dashboardPeriod]} Sales
+            </span>
             <span className="p-1.5 sm:p-2 rounded-md bg-primary-light text-primary shrink-0">
               <TrendingUp className="h-4 w-4" />
             </span>
@@ -256,13 +319,13 @@ export const DashboardPage: React.FC = () => {
             {formatCurrency(totalSales)}
           </div>
           <div className="mt-1 text-[10px] sm:text-[11px] text-muted-foreground truncate">
-            {sales.length} transactions recorded
+            {periodSales.length} {periodSales.length === 1 ? 'sale' : 'sales'} ({periodLabels[dashboardPeriod].toLowerCase()})
           </div>
         </Card>
 
         <Card className="p-3.5 sm:p-5">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-muted-foreground truncate">Payments Collected</span>
+            <span className="text-xs font-medium text-muted-foreground truncate">Cash & Remittance</span>
             <span className="p-1.5 sm:p-2 rounded-md bg-success-light text-success shrink-0">
               <Banknote className="h-4 w-4" />
             </span>
@@ -277,7 +340,7 @@ export const DashboardPage: React.FC = () => {
 
         <Card className="p-3.5 sm:p-5">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-muted-foreground truncate">Outstanding Debts</span>
+            <span className="text-xs font-medium text-muted-foreground truncate">Period Unpaid Balance</span>
             <span className="p-1.5 sm:p-2 rounded-md bg-destructive-light text-destructive shrink-0">
               <AlertTriangle className="h-4 w-4" />
             </span>
@@ -286,7 +349,7 @@ export const DashboardPage: React.FC = () => {
             {formatCurrency(totalOutstanding)}
           </div>
           <div className="mt-1 text-[10px] sm:text-[11px] text-muted-foreground truncate">
-            Crown, Big House & others
+            Total ledger debt: {formatCurrency(allTimeCustomerDebt)}
           </div>
         </Card>
 
@@ -301,7 +364,7 @@ export const DashboardPage: React.FC = () => {
             {totalFinishedStock.toLocaleString()}
           </div>
           <div className="mt-1 text-[10px] sm:text-[11px] text-muted-foreground truncate">
-            {totalUnitsSold} loaves sold today
+            {totalUnitsSold} loaves sold ({periodLabels[dashboardPeriod].toLowerCase()})
           </div>
         </Card>
       </div>

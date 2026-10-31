@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useStore } from '../../context/StoreContext';
 import { formatCurrency, formatDateTime } from '../../lib/formatters';
 import { Card, CardHeader, CardTitle, CardContent } from '../../components/common/Card';
@@ -18,30 +18,215 @@ import {
   CheckCircle2,
   Clock,
   X,
+  Calendar,
+  Download,
+  ChevronLeft,
+  ChevronRight,
+  DollarSign,
+  TrendingUp,
+  Package,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import ExcelJS from 'exceljs';
+
+type DateFilterOption = 'today' | 'yesterday' | 'week' | 'month' | 'all' | 'custom';
 
 export const SalesListPage: React.FC = () => {
   const { sales, recordPayment } = useStore();
 
+  // Filters state
+  const [dateFilter, setDateFilter] = useState<DateFilterOption>('today');
+  const [customStartDate, setCustomStartDate] = useState<string>('');
+  const [customEndDate, setCustomEndDate] = useState<string>('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'paid' | 'partial' | 'credit'>('all');
+  const [channelFilter, setChannelFilter] = useState<'all' | 'cash' | 'transfer' | 'pos'>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
+
+  // Pagination for heavy-usage transaction volume
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const pageSize = 25;
+
+  // Modals state
   const [selectedSaleForReceipt, setSelectedSaleForReceipt] = useState<Sale | null>(null);
   const [selectedSaleForInvoice, setSelectedSaleForInvoice] = useState<Sale | null>(null);
-
-  // Settlement modal state
   const [saleForSettlement, setSaleForSettlement] = useState<Sale | null>(null);
   const [repayAmount, setRepayAmount] = useState<string>('');
   const [repayMethod, setRepayMethod] = useState<PaymentMethod>('transfer');
   const [repayNote, setRepayNote] = useState<string>('');
 
-  const filteredSales = sales.filter((s) => {
-    const matchesFilter = filterStatus === 'all' || s.paymentStatus === filterStatus;
-    const matchesSearch =
-      s.receiptNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      s.customerName.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesFilter && matchesSearch;
-  });
+  // Date boundary calculations
+  const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
+  const yesterdayStr = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    return d.toISOString().split('T')[0];
+  }, []);
+  const weekAgoStr = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 7);
+    return d.toISOString().split('T')[0];
+  }, []);
+  const currentMonthStr = useMemo(() => todayStr.slice(0, 7), [todayStr]);
+
+  // Filtered sales calculation
+  const filteredSales = useMemo(() => {
+    return sales.filter((s) => {
+      const saleDate = s.createdAt ? s.createdAt.split('T')[0] : '';
+
+      // 1. Date Filter
+      let matchesDate = true;
+      if (dateFilter === 'today') {
+        matchesDate = saleDate === todayStr;
+      } else if (dateFilter === 'yesterday') {
+        matchesDate = saleDate === yesterdayStr;
+      } else if (dateFilter === 'week') {
+        matchesDate = saleDate >= weekAgoStr;
+      } else if (dateFilter === 'month') {
+        matchesDate = saleDate.startsWith(currentMonthStr);
+      } else if (dateFilter === 'custom') {
+        if (customStartDate && saleDate < customStartDate) matchesDate = false;
+        if (customEndDate && saleDate > customEndDate) matchesDate = false;
+      }
+
+      // 2. Payment Status Filter
+      const matchesStatus = filterStatus === 'all' || s.paymentStatus === filterStatus;
+
+      // 3. Payment Channel Filter
+      const matchesChannel = channelFilter === 'all' || s.paymentMethod === channelFilter;
+
+      // 4. Search Filter
+      const matchesSearch =
+        !searchQuery ||
+        s.receiptNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        s.customerName.toLowerCase().includes(searchQuery.toLowerCase());
+
+      return matchesDate && matchesStatus && matchesChannel && matchesSearch;
+    });
+  }, [
+    sales,
+    dateFilter,
+    todayStr,
+    yesterdayStr,
+    weekAgoStr,
+    currentMonthStr,
+    customStartDate,
+    customEndDate,
+    filterStatus,
+    channelFilter,
+    searchQuery,
+  ]);
+
+  // Reset page when filters change
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [dateFilter, filterStatus, channelFilter, searchQuery, customStartDate, customEndDate]);
+
+  // Live KPI Summary Metrics computed over the active filtered slice
+  const summaryMetrics = useMemo(() => {
+    const totalGross = filteredSales.reduce((acc, s) => acc + s.totalAmount, 0);
+    const totalPaid = filteredSales.reduce((acc, s) => acc + s.paidAmount, 0);
+    const totalDebt = filteredSales.reduce((acc, s) => acc + s.balanceAmount, 0);
+    const cashTotal = filteredSales
+      .filter((s) => s.paymentMethod === 'cash')
+      .reduce((acc, s) => acc + s.paidAmount, 0);
+    const transferTotal = filteredSales
+      .filter((s) => s.paymentMethod === 'transfer')
+      .reduce((acc, s) => acc + s.paidAmount, 0);
+    const posTotal = filteredSales
+      .filter((s) => s.paymentMethod === 'pos')
+      .reduce((acc, s) => acc + s.paidAmount, 0);
+    const totalLoaves = filteredSales.reduce(
+      (acc, s) => acc + s.items.reduce((sum, item) => sum + item.quantity, 0),
+      0
+    );
+
+    return {
+      count: filteredSales.length,
+      totalGross,
+      totalPaid,
+      totalDebt,
+      cashTotal,
+      transferTotal,
+      posTotal,
+      totalLoaves,
+    };
+  }, [filteredSales]);
+
+  // Pagination slice
+  const totalPages = Math.ceil(filteredSales.length / pageSize) || 1;
+  const paginatedSales = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredSales.slice(start, start + pageSize);
+  }, [filteredSales, currentPage, pageSize]);
+
+  // Export Filtered Slice to Excel
+  const handleExportFilteredExcel = async () => {
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'BMS v0.1';
+    workbook.created = new Date();
+
+    const labelMap: Record<DateFilterOption, string> = {
+      today: 'Today',
+      yesterday: 'Yesterday',
+      week: 'This_Week',
+      month: 'This_Month',
+      all: 'Full_History',
+      custom: 'Custom_Period',
+    };
+
+    const sheetName = `Sales_${labelMap[dateFilter]}`;
+    const sheet = workbook.addWorksheet(sheetName.substring(0, 31));
+
+    sheet.columns = [
+      { header: 'Receipt No', key: 'receiptNumber', width: 18 },
+      { header: 'Date & Time', key: 'date', width: 22 },
+      { header: 'Customer / Debtor', key: 'customer', width: 28 },
+      { header: 'Loaves Sold', key: 'loaves', width: 14 },
+      { header: 'Gross Sale (NGN)', key: 'total', width: 18 },
+      { header: 'Amount Paid (NGN)', key: 'paid', width: 18 },
+      { header: 'Balance Due (NGN)', key: 'balance', width: 18 },
+      { header: 'Payment Method', key: 'method', width: 16 },
+      { header: 'Status', key: 'status', width: 14 },
+      { header: 'Cashier / Staff', key: 'cashier', width: 20 },
+      { header: 'Notes / Reference', key: 'notes', width: 30 },
+    ];
+
+    filteredSales.forEach((s) => {
+      const loavesCount = s.items.reduce((sum, i) => sum + i.quantity, 0);
+      sheet.addRow({
+        receiptNumber: s.receiptNumber,
+        date: formatDateTime(s.createdAt),
+        customer: s.customerName,
+        loaves: loavesCount,
+        total: s.totalAmount,
+        paid: s.paidAmount,
+        balance: s.balanceAmount,
+        method: s.paymentMethod.toUpperCase(),
+        status: s.paymentStatus.toUpperCase(),
+        cashier: s.recordedBy,
+        notes: s.notes || '',
+      });
+    });
+
+    // Formatting Header Row
+    sheet.getRow(1).font = { bold: true };
+    sheet.getRow(1).fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFE2E8F0' },
+    };
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `BMS_Sales_Report_${labelMap[dateFilter]}_${todayStr}.xlsx`;
+    a.click();
+    window.URL.revokeObjectURL(url);
+  };
 
   const handleOpenRepayModal = (sale: Sale) => {
     setSaleForSettlement(sale);
@@ -68,7 +253,7 @@ export const SalesListPage: React.FC = () => {
 
   return (
     <div className="space-y-4">
-      {/* Top Banner & Staff Guidance */}
+      {/* Top Banner & Header */}
       <div className="space-y-2">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
@@ -76,109 +261,236 @@ export const SalesListPage: React.FC = () => {
               Sales & Invoices Ledger
             </h1>
             <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
-              Audit daily receipts, settle debtor accounts (Crown, Big House), and print invoices.
+              Filter high-volume transactions by day, week, or channel, audit debtor balances, and export spreadsheets.
             </p>
           </div>
-          <Link to="/sales/new">
-            <Button size="sm" className="gap-1.5 shadow-sm text-xs">
-              <PlusCircle className="h-4 w-4" />
-              <span>New Sale (POS)</span>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleExportFilteredExcel}
+              className="gap-1.5 shadow-xs text-xs"
+              title="Export currently filtered sales to Excel"
+            >
+              <Download className="h-3.5 w-3.5 text-primary" />
+              <span>Export Filtered (Excel)</span>
             </Button>
-          </Link>
-        </div>
-
-        <div className="flex items-center gap-2 p-2.5 rounded-lg bg-blue-50/70 border border-blue-200/80 text-[11px] text-blue-900">
-          <span className="font-bold px-1.5 py-0.5 rounded bg-blue-200/60 text-blue-950 shrink-0 uppercase text-[9px]">
-            Staff Rule
-          </span>
-          <span className="leading-tight">
-            To record a balance payment from a debtor, click <strong>"Settle"</strong> on their original invoice below. Do not create a new product sale to receive debt payments.
-          </span>
+            <Link to="/sales/new">
+              <Button size="sm" className="gap-1.5 shadow-sm text-xs">
+                <PlusCircle className="h-4 w-4" />
+                <span>New Sale (POS)</span>
+              </Button>
+            </Link>
+          </div>
         </div>
       </div>
 
-      {/* Filters and Search Bar */}
-      <Card className="p-3 sm:p-4">
-        <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between">
-          {/* Search */}
+      {/* Date Filter Bar: Today, Yesterday, This Week, This Month, All, Custom */}
+      <Card className="p-3 sm:p-4 space-y-3">
+        {/* Row 1: Timeframe Selection Pills */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2 border-b border-border">
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
+            <Calendar className="h-4 w-4 text-primary shrink-0 mr-1" />
+            <span className="text-xs font-bold text-foreground mr-1 hidden xs:inline">Period:</span>
+            {[
+              { id: 'today', label: "Today's Report" },
+              { id: 'yesterday', label: 'Yesterday' },
+              { id: 'week', label: 'This Week (7D)' },
+              { id: 'month', label: 'This Month' },
+              { id: 'all', label: 'All Time' },
+              { id: 'custom', label: 'Custom Range' },
+            ].map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setDateFilter(t.id as DateFilterOption)}
+                className={`px-3 py-1 rounded-full text-xs font-semibold transition-all whitespace-nowrap min-h-[30px] ${
+                  dateFilter === t.id
+                    ? 'bg-primary text-primary-foreground font-bold shadow-xs'
+                    : 'bg-muted text-muted-foreground hover:bg-border active:scale-95'
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Custom Date Inputs if 'custom' is active */}
+          {dateFilter === 'custom' && (
+            <div className="flex items-center gap-2 text-xs">
+              <input
+                type="date"
+                value={customStartDate}
+                onChange={(e) => setCustomStartDate(e.target.value)}
+                className="h-8 px-2 rounded border border-border bg-surface text-xs"
+              />
+              <span className="text-muted-foreground">to</span>
+              <input
+                type="date"
+                value={customEndDate}
+                onChange={(e) => setCustomEndDate(e.target.value)}
+                className="h-8 px-2 rounded border border-border bg-surface text-xs"
+              />
+            </div>
+          )}
+        </div>
+
+        {/* Row 2: Search + Status + Payment Channel */}
+        <div className="flex flex-col md:flex-row gap-2.5 items-stretch md:items-center justify-between">
+          {/* Search Box */}
           <div className="relative flex-1 max-w-sm">
             <input
               type="text"
               placeholder="Search Crown, Big House, receipt #..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full h-9 px-3 pl-9 pr-8 rounded-md border border-border bg-surface text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+              className="w-full h-8.5 px-3 pl-8 pr-8 rounded-md border border-border bg-surface text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
             />
-            <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
             {searchQuery && (
               <button
                 type="button"
                 onClick={() => setSearchQuery('')}
-                className="absolute right-2.5 top-2.5 text-muted-foreground hover:text-foreground"
+                className="absolute right-2 top-2 text-muted-foreground hover:text-foreground"
               >
-                <X className="h-4 w-4" />
+                <X className="h-3.5 w-3.5" />
               </button>
             )}
           </div>
 
-          {/* Filter Pills with Counts */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
-            <Filter className="h-3.5 w-3.5 text-muted-foreground hidden sm:inline shrink-0" />
-            {[
-              { id: 'all', label: 'All Sales', count: sales.length },
-              {
-                id: 'partial',
-                label: 'Debtors / Partial',
-                count: sales.filter((s) => s.paymentStatus === 'partial').length,
-              },
-              {
-                id: 'credit',
-                label: 'Full Credit',
-                count: sales.filter((s) => s.paymentStatus === 'credit').length,
-              },
-              {
-                id: 'paid',
-                label: 'Settled',
-                count: sales.filter((s) => s.paymentStatus === 'paid').length,
-              },
-            ].map((f) => {
-              const isSelected = filterStatus === f.id;
-              return (
+          {/* Status & Channel Filters */}
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            {/* Status Picker */}
+            <div className="flex items-center gap-1 bg-muted/60 p-0.5 rounded-lg border border-border">
+              {[
+                { id: 'all', label: 'All Status' },
+                { id: 'paid', label: 'Settled' },
+                { id: 'partial', label: 'Debtors' },
+                { id: 'credit', label: 'Credit' },
+              ].map((s) => (
                 <button
-                  key={f.id}
-                  onClick={() => setFilterStatus(f.id as any)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all whitespace-nowrap min-h-[32px] ${
-                    isSelected
-                      ? 'bg-primary text-primary-foreground font-bold shadow-xs'
-                      : 'bg-muted text-muted-foreground hover:bg-border active:scale-95'
+                  key={s.id}
+                  type="button"
+                  onClick={() => setFilterStatus(s.id as any)}
+                  className={`px-2 py-1 rounded text-[11px] font-semibold transition-all ${
+                    filterStatus === s.id
+                      ? 'bg-surface text-foreground font-bold shadow-xs'
+                      : 'text-muted-foreground hover:text-foreground'
                   }`}
                 >
-                  <span>{f.label}</span>
-                  <span
-                    className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
-                      isSelected
-                        ? 'bg-white/20 text-white'
-                        : 'bg-background/80 text-muted-foreground'
-                    }`}
-                  >
-                    {f.count}
-                  </span>
+                  {s.label}
                 </button>
-              );
-            })}
+              ))}
+            </div>
+
+            {/* Channel Picker */}
+            <div className="flex items-center gap-1 bg-muted/60 p-0.5 rounded-lg border border-border">
+              {[
+                { id: 'all', label: 'All Channels' },
+                { id: 'cash', label: 'Cash' },
+                { id: 'transfer', label: 'Transfer' },
+                { id: 'pos', label: 'POS' },
+              ].map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => setChannelFilter(c.id as any)}
+                  className={`px-2 py-1 rounded text-[11px] font-semibold transition-all ${
+                    channelFilter === c.id
+                      ? 'bg-surface text-foreground font-bold shadow-xs'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  {c.label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </Card>
 
+      {/* Live Operational KPI Summary Bar (Dynamically Updates with Date Filter) */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2.5">
+        <div className="p-3 rounded-lg bg-surface border border-border shadow-xs">
+          <span className="text-[10px] font-semibold uppercase text-muted-foreground block">
+            Transactions
+          </span>
+          <span className="font-extrabold text-base text-foreground mt-0.5 block">
+            {summaryMetrics.count} sales
+          </span>
+          <span className="text-[10px] text-muted-foreground">
+            {summaryMetrics.totalLoaves} loaves sold
+          </span>
+        </div>
+
+        <div className="p-3 rounded-lg bg-surface border border-border shadow-xs">
+          <span className="text-[10px] font-semibold uppercase text-muted-foreground block">
+            Gross Sales Value
+          </span>
+          <span className="font-extrabold text-base text-foreground mt-0.5 block">
+            {formatCurrency(summaryMetrics.totalGross)}
+          </span>
+          <span className="text-[10px] text-emerald-600 font-semibold">
+            {formatCurrency(summaryMetrics.totalPaid)} collected
+          </span>
+        </div>
+
+        <div className="p-3 rounded-lg bg-surface border border-border shadow-xs">
+          <span className="text-[10px] font-semibold uppercase text-muted-foreground block">
+            Cash Remitted
+          </span>
+          <span className="font-extrabold text-base text-foreground mt-0.5 block">
+            {formatCurrency(summaryMetrics.cashTotal)}
+          </span>
+          <span className="text-[10px] text-muted-foreground">Drawer currency</span>
+        </div>
+
+        <div className="p-3 rounded-lg bg-surface border border-border shadow-xs">
+          <span className="text-[10px] font-semibold uppercase text-muted-foreground block">
+            Bank Transfer In
+          </span>
+          <span className="font-extrabold text-base text-blue-700 mt-0.5 block">
+            {formatCurrency(summaryMetrics.transferTotal)}
+          </span>
+          <span className="text-[10px] text-muted-foreground">Verified credits</span>
+        </div>
+
+        <div className="p-3 rounded-lg bg-surface border border-border shadow-xs">
+          <span className="text-[10px] font-semibold uppercase text-muted-foreground block">
+            Card POS Machine
+          </span>
+          <span className="font-extrabold text-base text-purple-700 mt-0.5 block">
+            {formatCurrency(summaryMetrics.posTotal)}
+          </span>
+          <span className="text-[10px] text-muted-foreground">Terminal slips</span>
+        </div>
+
+        <div className="p-3 rounded-lg bg-surface border border-border shadow-xs">
+          <span className="text-[10px] font-semibold uppercase text-muted-foreground block">
+            Unpaid Debt Created
+          </span>
+          <span
+            className={`font-extrabold text-base mt-0.5 block ${
+              summaryMetrics.totalDebt > 0 ? 'text-red-600' : 'text-emerald-700'
+            }`}
+          >
+            {formatCurrency(summaryMetrics.totalDebt)}
+          </span>
+          <span className="text-[10px] text-muted-foreground">
+            {summaryMetrics.totalDebt > 0 ? 'To be recovered' : 'Zero debt created'}
+          </span>
+        </div>
+      </div>
+
       {/* Sales Content: Desktop Table + Mobile Cards */}
       <Card>
         <CardContent className="p-0">
-          {/* Desktop Table (>= sm) */}
+          {/* Desktop Table */}
           <div className="hidden sm:block overflow-x-auto">
             <table className="w-full text-xs text-left">
               <thead className="bg-muted/50 border-b border-border text-muted-foreground uppercase text-[10px] font-semibold">
                 <tr>
-                  <th className="px-4 py-3">Invoice / Time</th>
+                  <th className="px-4 py-3">Receipt / Time</th>
                   <th className="px-4 py-3">Customer / Debtor</th>
                   <th className="px-4 py-3">Items Summary</th>
                   <th className="px-4 py-3 text-right">Total</th>
@@ -189,89 +501,76 @@ export const SalesListPage: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {filteredSales.length === 0 ? (
+                {paginatedSales.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="py-8 text-center text-muted-foreground">
-                      No sales records matching your search or filter.
+                    <td colSpan={8} className="py-12 text-center text-muted-foreground">
+                      No sales records matching your selected date or filters.
                     </td>
                   </tr>
                 ) : (
-                  filteredSales.map((sale) => (
+                  paginatedSales.map((sale) => (
                     <tr key={sale.id} className="hover:bg-muted/30 transition-colors">
                       <td className="px-4 py-3">
-                        <span className="font-semibold text-foreground">{sale.receiptNumber}</span>
-                        <div className="flex items-center gap-1 text-[10px] text-muted-foreground mt-0.5">
+                        <div className="font-bold text-foreground">{sale.receiptNumber}</div>
+                        <div className="text-[10px] text-muted-foreground flex items-center gap-1 mt-0.5">
                           <Clock className="h-3 w-3" />
                           <span>{formatDateTime(sale.createdAt)}</span>
                         </div>
                       </td>
-                      <td className="px-4 py-3">
-                        <div className="font-medium text-foreground">{sale.customerName}</div>
-                        <div className="text-[10px] text-muted-foreground">
-                          Cashier: {sale.recordedBy}
-                        </div>
+                      <td className="px-4 py-3 font-semibold text-foreground">
+                        {sale.customerName}
                       </td>
-                      <td className="px-4 py-3">
-                        <div className="text-muted-foreground max-w-[180px] truncate">
+                      <td className="px-4 py-3 text-muted-foreground">
+                        <span className="truncate max-w-[200px] block">
                           {sale.items.map((i) => `${i.quantity}x ${i.productName}`).join(', ')}
-                        </div>
+                        </span>
                       </td>
                       <td className="px-4 py-3 text-right font-bold text-foreground">
                         {formatCurrency(sale.totalAmount)}
                       </td>
-                      <td className="px-4 py-3 text-right text-success font-semibold">
+                      <td className="px-4 py-3 text-right font-semibold text-emerald-700">
                         {formatCurrency(sale.paidAmount)}
+                        <span className="text-[9px] text-muted-foreground block uppercase">
+                          {sale.paymentMethod}
+                        </span>
                       </td>
-                      <td className="px-4 py-3 text-right">
-                        <span
-                          className={
-                            sale.balanceAmount > 0
-                              ? 'text-destructive font-bold'
-                              : 'text-muted-foreground'
-                          }
-                        >
+                      <td className="px-4 py-3 text-right font-bold">
+                        <span className={sale.balanceAmount > 0 ? 'text-red-600' : 'text-muted-foreground'}>
                           {formatCurrency(sale.balanceAmount)}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-center">
-                        <div className="flex flex-col items-center gap-1">
-                          <PaymentBadge status={sale.paymentStatus} />
-                          <SyncBadge status={sale.syncStatus} />
-                        </div>
+                        <PaymentBadge status={sale.paymentStatus} />
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-1.5">
                           {sale.balanceAmount > 0 && (
                             <Button
-                              variant="primary"
                               size="sm"
+                              variant="outline"
                               onClick={() => handleOpenRepayModal(sale)}
-                              className="h-7 text-xs px-2 gap-1 bg-amber-600 hover:bg-amber-700 text-white"
-                              title="Settle balance on this exact transaction"
+                              className="h-7 px-2 text-[11px] font-bold text-primary border-primary/40 bg-primary-light/30 hover:bg-primary-light"
                             >
-                              <CreditCard className="h-3.5 w-3.5" />
-                              <span>Settle</span>
+                              Settle
                             </Button>
                           )}
                           <Button
-                            variant="outline"
                             size="sm"
-                            onClick={() => setSelectedSaleForInvoice(sale)}
-                            className="h-7 text-xs px-2 gap-1 text-primary border-primary/30"
-                            title="Print Formal Invoice"
+                            variant="ghost"
+                            onClick={() => setSelectedSaleForReceipt(sale)}
+                            className="h-7 w-7 p-0"
+                            title="Print Thermal Slip (58/80mm)"
                           >
-                            <FileText className="h-3.5 w-3.5" />
-                            <span>Invoice</span>
+                            <Receipt className="h-3.5 w-3.5 text-muted-foreground" />
                           </Button>
                           <Button
-                            variant="outline"
                             size="sm"
-                            onClick={() => setSelectedSaleForReceipt(sale)}
-                            className="h-7 text-xs px-2 gap-1"
-                            title="Print Thermal Receipt"
+                            variant="ghost"
+                            onClick={() => setSelectedSaleForInvoice(sale)}
+                            className="h-7 w-7 p-0"
+                            title="Print Official A4 Invoice"
                           >
-                            <Receipt className="h-3.5 w-3.5" />
-                            <span>Receipt</span>
+                            <FileText className="h-3.5 w-3.5 text-muted-foreground" />
                           </Button>
                         </div>
                       </td>
@@ -282,71 +581,81 @@ export const SalesListPage: React.FC = () => {
             </table>
           </div>
 
-          {/* Mobile Card List (< sm) */}
-          <div className="block sm:hidden divide-y divide-border">
-            {filteredSales.length === 0 ? (
-              <div className="p-6 text-center text-xs text-muted-foreground">
-                No sales records matching your search or filter.
+          {/* Mobile Cards View */}
+          <div className="sm:hidden divide-y divide-border">
+            {paginatedSales.length === 0 ? (
+              <div className="py-10 text-center text-xs text-muted-foreground">
+                No sales records found for this period.
               </div>
             ) : (
-              filteredSales.map((sale) => (
+              paginatedSales.map((sale) => (
                 <div key={sale.id} className="p-3.5 space-y-2.5">
-                  <div className="flex items-start justify-between">
+                  <div className="flex items-start justify-between gap-2">
                     <div>
-                      <div className="font-bold text-sm text-foreground">{sale.customerName}</div>
-                      <div className="text-[11px] text-muted-foreground">
-                        {sale.receiptNumber} • {formatDateTime(sale.createdAt)}
+                      <div className="font-bold text-sm text-foreground">{sale.receiptNumber}</div>
+                      <div className="text-xs font-semibold text-primary">{sale.customerName}</div>
+                      <div className="text-[10px] text-muted-foreground mt-0.5">
+                        {formatDateTime(sale.createdAt)}
                       </div>
                     </div>
                     <PaymentBadge status={sale.paymentStatus} />
                   </div>
 
-                  <div className="text-xs text-muted-foreground bg-muted/30 p-2 rounded space-y-1">
-                    <div className="flex justify-between">
-                      <span>Total Sale:</span>
-                      <span className="font-bold text-foreground">{formatCurrency(sale.totalAmount)}</span>
+                  <div className="text-xs text-muted-foreground bg-muted/30 p-2 rounded">
+                    {sale.items.map((i) => `${i.quantity}x ${i.productName}`).join(', ')}
+                  </div>
+
+                  <div className="flex items-center justify-between text-xs pt-1 border-t border-border/60">
+                    <div>
+                      <span className="text-[10px] text-muted-foreground">Total:</span>{' '}
+                      <span className="font-bold text-foreground">
+                        {formatCurrency(sale.totalAmount)}
+                      </span>
                     </div>
-                    <div className="flex justify-between">
-                      <span>Paid:</span>
-                      <span className="font-semibold text-success">{formatCurrency(sale.paidAmount)}</span>
+                    <div>
+                      <span className="text-[10px] text-muted-foreground">Paid:</span>{' '}
+                      <span className="font-semibold text-emerald-700">
+                        {formatCurrency(sale.paidAmount)}
+                      </span>
                     </div>
                     {sale.balanceAmount > 0 && (
-                      <div className="flex justify-between font-bold text-destructive pt-1 border-t border-border">
-                        <span>Balance Owed:</span>
-                        <span>{formatCurrency(sale.balanceAmount)}</span>
+                      <div>
+                        <span className="text-[10px] text-muted-foreground">Owes:</span>{' '}
+                        <span className="font-bold text-red-600">
+                          {formatCurrency(sale.balanceAmount)}
+                        </span>
                       </div>
                     )}
                   </div>
 
-                  {/* Mobile Actions */}
-                  <div className="flex items-center gap-1.5 pt-1">
+                  <div className="flex items-center justify-end gap-2 pt-1">
                     {sale.balanceAmount > 0 && (
                       <Button
                         size="sm"
+                        variant="outline"
                         onClick={() => handleOpenRepayModal(sale)}
-                        className="h-8 text-xs flex-1 gap-1 bg-amber-600 text-white hover:bg-amber-700"
+                        className="h-7 text-xs font-bold text-primary border-primary/40"
                       >
-                        <CreditCard className="h-3.5 w-3.5" />
-                        <span>Settle Debt</span>
+                        Settle Balance
                       </Button>
                     )}
                     <Button
-                      variant="outline"
                       size="sm"
-                      onClick={() => setSelectedSaleForInvoice(sale)}
-                      className="h-8 text-xs flex-1 gap-1 text-primary border-primary/30"
+                      variant="outline"
+                      onClick={() => setSelectedSaleForReceipt(sale)}
+                      className="h-7 text-xs gap-1"
                     >
-                      <FileText className="h-3.5 w-3.5" />
-                      <span>Invoice</span>
+                      <Receipt className="h-3 w-3" />
+                      <span>Slip</span>
                     </Button>
                     <Button
-                      variant="outline"
                       size="sm"
-                      onClick={() => setSelectedSaleForReceipt(sale)}
-                      className="h-8 text-xs flex-1 gap-1"
+                      variant="outline"
+                      onClick={() => setSelectedSaleForInvoice(sale)}
+                      className="h-7 text-xs gap-1"
                     >
-                      <Receipt className="h-3.5 w-3.5" />
-                      <span>Receipt</span>
+                      <FileText className="h-3 w-3" />
+                      <span>A4</span>
                     </Button>
                   </div>
                 </div>
@@ -354,43 +663,62 @@ export const SalesListPage: React.FC = () => {
             )}
           </div>
         </CardContent>
+
+        {/* Pagination Controls for High-Volume Data */}
+        {filteredSales.length > pageSize && (
+          <div className="p-3 border-t border-border flex items-center justify-between text-xs text-muted-foreground">
+            <div>
+              Showing{' '}
+              <strong>
+                {(currentPage - 1) * pageSize + 1}–
+                {Math.min(currentPage * pageSize, filteredSales.length)}
+              </strong>{' '}
+              of <strong>{filteredSales.length}</strong> transactions
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={currentPage === 1}
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                className="h-7 px-2 gap-1"
+              >
+                <ChevronLeft className="h-3.5 w-3.5" />
+                <span className="hidden xs:inline">Prev</span>
+              </Button>
+              <span className="px-2 font-bold text-foreground">
+                {currentPage} / {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={currentPage === totalPages}
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                className="h-7 px-2 gap-1"
+              >
+                <span className="hidden xs:inline">Next</span>
+                <ChevronRight className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          </div>
+        )}
       </Card>
 
-      {/* Partial Payment / Debt Settlement Modal */}
-      <Modal
-        isOpen={!!saleForSettlement}
-        onClose={() => setSaleForSettlement(null)}
-        title="Record Debt Repayment"
-        description={
-          saleForSettlement
-            ? `Direct settlement for ${saleForSettlement.receiptNumber} (${saleForSettlement.customerName})`
-            : ''
-        }
-      >
-        {saleForSettlement && (
+      {/* Settle Balance Modal */}
+      {saleForSettlement && (
+        <Modal
+          isOpen={true}
+          onClose={() => setSaleForSettlement(null)}
+          title={`Settle Balance: ${saleForSettlement.receiptNumber}`}
+          description={`Customer: ${saleForSettlement.customerName} • Outstanding: ${formatCurrency(
+            saleForSettlement.balanceAmount
+          )}`}
+          maxWidth="sm"
+        >
           <form onSubmit={handleSubmitRepayment} className="space-y-4">
-            <div className="bg-muted/40 p-3 rounded-lg border border-border space-y-1 text-xs">
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Original Invoice Total:</span>
-                <span className="font-semibold">{formatCurrency(saleForSettlement.totalAmount)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Previously Paid:</span>
-                <span className="font-semibold text-success">
-                  {formatCurrency(saleForSettlement.paidAmount)}
-                </span>
-              </div>
-              <div className="flex justify-between pt-1 border-t border-border font-bold">
-                <span className="text-destructive">Remaining Balance Owed:</span>
-                <span className="text-destructive text-sm">
-                  {formatCurrency(saleForSettlement.balanceAmount)}
-                </span>
-              </div>
-            </div>
-
             <div>
-              <label className="block text-xs font-medium text-foreground mb-1">
-                Repayment Amount (₦)
+              <label className="block text-xs font-semibold text-foreground mb-1">
+                Amount to Collect (NGN) *
               </label>
               <input
                 type="number"
@@ -398,47 +726,51 @@ export const SalesListPage: React.FC = () => {
                 max={saleForSettlement.balanceAmount}
                 value={repayAmount}
                 onChange={(e) => setRepayAmount(e.target.value)}
-                className="w-full h-10 px-3 rounded-md border border-border bg-surface text-base font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                className="w-full h-10 px-3 rounded-md border border-border bg-surface text-sm font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
                 required
               />
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-foreground mb-1">
+              <label className="block text-xs font-semibold text-foreground mb-1">
                 Payment Channel
               </label>
               <div className="grid grid-cols-3 gap-2">
-                {(['cash', 'transfer', 'pos'] as PaymentMethod[]).map((m) => (
+                {[
+                  { id: 'cash', label: 'Cash' },
+                  { id: 'transfer', label: 'Transfer' },
+                  { id: 'pos', label: 'POS' },
+                ].map((m) => (
                   <button
-                    key={m}
+                    key={m.id}
                     type="button"
-                    onClick={() => setRepayMethod(m)}
-                    className={`py-2 px-2 rounded-md border text-xs font-semibold capitalize transition-all ${
-                      repayMethod === m
-                        ? 'border-primary bg-primary text-primary-foreground shadow-xs'
-                        : 'border-border bg-surface text-muted-foreground hover:bg-muted'
+                    onClick={() => setRepayMethod(m.id as PaymentMethod)}
+                    className={`py-2 text-xs font-semibold rounded-md border transition-all ${
+                      repayMethod === m.id
+                        ? 'border-primary bg-primary-light text-primary font-bold'
+                        : 'border-border bg-surface text-muted-foreground'
                     }`}
                   >
-                    {m}
+                    {m.label}
                   </button>
                 ))}
               </div>
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-foreground mb-1">
-                Payment Note / Bank Reference
+              <label className="block text-xs font-semibold text-foreground mb-1">
+                Reference / Receipt Note
               </label>
               <input
                 type="text"
+                placeholder="e.g. Bank transfer ref, cash collected at counter"
                 value={repayNote}
                 onChange={(e) => setRepayNote(e.target.value)}
-                placeholder="e.g. Zenith bank transfer reference"
                 className="w-full h-9 px-3 rounded-md border border-border bg-surface text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
               />
             </div>
 
-            <div className="flex justify-end gap-2 pt-2">
+            <div className="flex justify-end gap-2 pt-2 border-t border-border">
               <Button
                 type="button"
                 variant="outline"
@@ -447,23 +779,22 @@ export const SalesListPage: React.FC = () => {
               >
                 Cancel
               </Button>
-              <Button type="submit" size="sm" className="gap-1.5">
-                <CheckCircle2 className="h-4 w-4" />
-                <span>Confirm Repayment</span>
+              <Button type="submit" size="sm">
+                Confirm Settlement
               </Button>
             </div>
           </form>
-        )}
-      </Modal>
+        </Modal>
+      )}
 
-      {/* Commercial Invoice Modal */}
+      {/* Official Invoice Modal */}
       <InvoiceModal
         sale={selectedSaleForInvoice}
         isOpen={!!selectedSaleForInvoice}
         onClose={() => setSelectedSaleForInvoice(null)}
       />
 
-      {/* Branded Receipt Modal */}
+      {/* Thermal Receipt Modal */}
       <ReceiptModal
         sale={selectedSaleForReceipt}
         isOpen={!!selectedSaleForReceipt}

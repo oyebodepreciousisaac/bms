@@ -129,17 +129,23 @@ export interface DistributorAllocationItem {
   quantityShortage?: number;
 }
 
+export type AllocationStatus = 'assigned' | 'acknowledged' | 'submitted' | 'reconciled';
+
 export interface DistributorAllocation {
   id: string;
   distributorId: string;
   distributorName: string;
   allocationDate: string;
-  status: 'assigned' | 'acknowledged' | 'reconciled';
+  status: AllocationStatus;
   items: DistributorAllocationItem[];
   totalAllocatedValue: number;
   totalCollectedValue: number;
   shortageTotalValue?: number;
   shortageResolution?: 'debited_to_driver' | 'bakery_loss_approved' | 'none';
+  submittedBy?: string;
+  submittedAt?: string;
+  approvedBy?: string;
+  approvedAt?: string;
   notes?: string;
 }
 
