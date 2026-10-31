@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import {
   UserRole,
   StaffUser,
@@ -126,6 +126,7 @@ interface StoreContextType {
 
   // Offline Sync State
   isOnline: boolean;
+  isSyncing: boolean;
   toggleOnline: () => void;
   syncOfflineQueue: () => void;
   pendingSyncCount: number;
@@ -155,7 +156,24 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [rawMaterials, setRawMaterials] = useState<RawMaterial[]>(initialRawMaterials);
   const [rawMaterialMovements, setRawMaterialMovements] = useState<RawMaterialMovement[]>(initialRawMaterialMovements);
   const [allocations, setAllocations] = useState<DistributorAllocation[]>(initialAllocations);
-  const [isOnline, setIsOnline] = useState<boolean>(true);
+  const [isOnline, setIsOnline] = useState<boolean>(() =>
+    typeof navigator !== 'undefined' ? navigator.onLine : true
+  );
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
+
+  // Monitor real browser online/offline events automatically
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   // Sync staff to localStorage
   useEffect(() => {
@@ -178,10 +196,61 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setIsOnline((prev) => !prev);
   };
 
+  // Automated background synchronization - seamless with zero clicking required
+  const drainQueue = useCallback(async () => {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+    const pendingSales = sales.filter((s) => s.syncStatus === 'saved_locally');
+    if (pendingSales.length === 0) return;
+
+    setIsSyncing(true);
+    try {
+      if (isSupabaseConfigured) {
+        for (const sale of pendingSales) {
+          try {
+            await supabaseService.processSale({
+              clientTxId: sale.clientTxId,
+              receiptNumber: sale.receiptNumber,
+              customerId: sale.customerId,
+              totalAmount: sale.totalAmount,
+              paidAmount: sale.paidAmount,
+              paymentMethod: sale.paymentMethod,
+              recordedBy: sale.recordedBy,
+              items: sale.items,
+              notes: sale.notes,
+            });
+          } catch (itemErr) {
+            console.warn(`Background sync error for ${sale.receiptNumber}:`, itemErr);
+          }
+        }
+      }
+      // Update local state to synced
+      setSales((prev) =>
+        prev.map((s) => (s.syncStatus === 'saved_locally' ? { ...s, syncStatus: 'synced' } : s))
+      );
+    } finally {
+      setIsSyncing(false);
+    }
+  }, [sales]);
+
+  // Automatically trigger sync when coming online or when new sales are added
+  useEffect(() => {
+    if (isOnline) {
+      drainQueue();
+    }
+  }, [isOnline, pendingSyncCount, drainQueue]);
+
+  // Heartbeat automated sync check every 15 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (typeof navigator !== 'undefined' && navigator.onLine) {
+        drainQueue();
+      }
+    }, 15000);
+    return () => clearInterval(interval);
+  }, [drainQueue]);
+
   const syncOfflineQueue = () => {
-    setSales((prev) =>
-      prev.map((s) => (s.syncStatus === 'saved_locally' ? { ...s, syncStatus: 'synced' } : s))
-    );
+    drainQueue();
   };
 
   // Auth operations with cryptographic SHA-256 password protection
@@ -789,6 +858,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         resetDemoData,
         clearAllDataToFreshBakery,
         isOnline,
+        isSyncing,
         toggleOnline,
         syncOfflineQueue,
         pendingSyncCount,

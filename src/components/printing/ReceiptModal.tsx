@@ -84,8 +84,8 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, isOpen, onClos
       maxWidth="md"
     >
       <div className="space-y-4">
-        {/* Bluetooth App Text Copy Bar */}
-        <div className="flex items-center justify-between p-2 rounded-lg bg-muted/60 border border-border text-xs">
+        {/* Bluetooth App Text Copy Bar (Onscreen Only) */}
+        <div className="flex items-center justify-between p-2 rounded-lg bg-muted/60 border border-border text-xs no-print">
           <div className="flex items-center gap-1.5 text-muted-foreground font-medium">
             <Smartphone className="h-4 w-4 text-primary" />
             <span>58mm / 80mm Bluetooth Printer</span>
@@ -196,8 +196,8 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, isOpen, onClos
           </div>
         </div>
 
-        {/* Action Buttons */}
-        <div className="flex items-center justify-between pt-2">
+        {/* Action Buttons (Onscreen Only) */}
+        <div className="flex items-center justify-between pt-2 no-print">
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
             {sale.balanceAmount === 0 ? (
               <span className="flex items-center gap-1 text-success">

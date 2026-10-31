@@ -55,68 +55,101 @@
   background: hsl(var(--muted-foreground));
 }
 
-/* Thermal Bluetooth receipt & Invoice print stylesheet */
+/* Utility to completely hide scrollbar while preserving scroll functionality */
+.scrollbar-none::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+.scrollbar-none {
+  -ms-overflow-style: none !important; /* IE and Edge */
+  scrollbar-width: none !important; /* Firefox */
+}
+
+/* =========================================================================
+   Thermal Bluetooth Receipt & Official Invoice Print Stylesheet
+   Guarantees that ONLY the active receipt or invoice prints, with NO 
+   background app chrome, POS screens, or modal overlays leaking through.
+   ========================================================================= */
 @media print {
-  body {
-    background: white !important;
-    color: black !important;
+  /* Set clean white page and zero margins */
+  html, body {
+    background: #ffffff !important;
+    color: #000000 !important;
     margin: 0 !important;
     padding: 0 !important;
-  }
-
-  /* Hide app navigation, chrome, modal overlays, buttons and non-printable elements */
-  header,
-  aside,
-  nav,
-  button,
-  .no-print {
-    display: none !important;
-  }
-
-  /* Make sure modal overlay doesn't dim or block printed document */
-  .fixed {
-    position: static !important;
-    background: transparent !important;
-    padding: 0 !important;
-  }
-
-  /* Toggle between thermal slip and A4 when printing */
-  body.print-mode-thermal #printable-invoice-a4 {
-    display: none !important;
-  }
-
-  body.print-mode-a4 #printable-invoice-thermal {
-    display: none !important;
-  }
-
-  /* Thermal printer styles: 58mm / 80mm continuous roll */
-  #printable-receipt,
-  #printable-invoice-thermal {
-    border: none !important;
-    box-shadow: none !important;
-    padding: 2mm 1mm !important;
-    max-width: 58mm !important;
     width: 100% !important;
-    margin: 0 auto !important;
-    font-family: monospace, 'Courier New', Courier !important;
+    height: auto !important;
+    min-height: 100% !important;
+    overflow: visible !important;
+  }
+
+  /* Hide everything on the page by default */
+  body * {
+    visibility: hidden !important;
+  }
+
+  /* Make ONLY the printable receipt or invoice and all its children visible */
+  #printable-receipt,
+  #printable-receipt *,
+  #printable-invoice-thermal,
+  #printable-invoice-thermal *,
+  #printable-invoice-a4,
+  #printable-invoice-a4 * {
+    visibility: visible !important;
+  }
+
+  /* Force printable targets to pin directly to the top-left of the physical paper */
+  #printable-receipt,
+  #printable-invoice-thermal,
+  #printable-invoice-a4 {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    margin: 0 !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    z-index: 99999999 !important;
+    box-shadow: none !important;
+  }
+
+  /* Specific 58mm / 80mm continuous thermal slip layout */
+  body.print-mode-thermal #printable-receipt,
+  body.print-mode-thermal #printable-invoice-thermal,
+  #printable-receipt {
+    max-width: 58mm !important;
+    width: 58mm !important;
+    padding: 2mm 1mm !important;
+    border: none !important;
+    font-family: 'Courier New', Courier, monospace !important;
     font-size: 11px !important;
     line-height: 1.25 !important;
     display: block !important;
   }
 
-  /* A4 Invoice print styles */
-  #printable-invoice-a4 {
-    border: 1px solid #e5e7eb !important;
-    box-shadow: none !important;
-    padding: 15mm !important;
+  /* A4 Formal Tax Invoice layout */
+  body.print-mode-a4 #printable-invoice-a4 {
     max-width: 100% !important;
     width: 100% !important;
+    padding: 10mm 15mm !important;
+    border: 1px solid #d1d5db !important;
     display: block !important;
   }
 
+  /* Mutual exclusion between thermal and A4 when print mode class is present */
+  body.print-mode-thermal #printable-invoice-a4 {
+    display: none !important;
+    visibility: hidden !important;
+  }
+
+  body.print-mode-a4 #printable-receipt,
+  body.print-mode-a4 #printable-invoice-thermal {
+    display: none !important;
+    visibility: hidden !important;
+  }
+
   @page {
-    margin: 0;
+    margin: 0mm;
     size: auto;
   }
 }
-

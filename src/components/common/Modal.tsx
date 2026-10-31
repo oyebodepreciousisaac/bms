@@ -47,7 +47,7 @@ export const Modal: React.FC<ModalProps> = ({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-150">
       <div
-        className="fixed inset-0"
+        className="fixed inset-0 no-print"
         onClick={onClose}
         aria-hidden="true"
       />
@@ -57,7 +57,7 @@ export const Modal: React.FC<ModalProps> = ({
           maxW[maxWidth]
         )}
       >
-        <div className="flex items-center justify-between border-b border-border px-5 py-4">
+        <div className="flex items-center justify-between border-b border-border px-5 py-4 no-print">
           <div>
             <h3 className="text-base font-semibold text-foreground">{title}</h3>
             {description && (

@@ -106,8 +106,8 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({ sale, isOpen, onClos
       maxWidth={printFormat === 'thermal' ? 'md' : 'xl'}
     >
       <div className="space-y-4">
-        {/* Format Selector Bar */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 p-2 rounded-lg bg-muted/60 border border-border">
+        {/* Format Selector Bar (Onscreen Only) */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 p-2 rounded-lg bg-muted/60 border border-border no-print">
           <div className="flex items-center gap-1">
             <span className="text-[11px] font-semibold text-muted-foreground mr-1">
               Printer Format:
@@ -415,8 +415,8 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({ sale, isOpen, onClos
           </div>
         )}
 
-        {/* Modal Buttons */}
-        <div className="flex items-center justify-between pt-2">
+        {/* Modal Buttons (Onscreen Only) */}
+        <div className="flex items-center justify-between pt-2 no-print">
           <Button variant="outline" size="sm" onClick={onClose}>
             Close
           </Button>

@@ -20,3 +20,4 @@ export async function verifyPin(rawPin: string, storedHashOrPlain: string): Prom
   // Fallback for initial demo seed or unhashed passwords
   return rawPin === storedHashOrPlain;
 }
+

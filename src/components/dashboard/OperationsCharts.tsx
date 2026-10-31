@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { formatCurrency } from '../../lib/formatters';
 import { Card } from '../common/Card';
 import { Sale } from '../../types/domain.types';
-import { TrendingUp, TrendingDown, DollarSign, Activity, Calendar } from 'lucide-react';
+import { TrendingUp, TrendingDown, DollarSign, Activity, Calendar, Eye } from 'lucide-react';
 
 interface OperationsChartsProps {
   sales: Sale[];
@@ -14,7 +14,7 @@ interface OperationsChartsProps {
   posPaid: number;
 }
 
-type Timeframe = '1w' | '2w' | '1m' | 'all';
+export type Timeframe = '1w' | '2w' | '3w' | '1m' | '2m' | '3m' | 'qtr' | '1y';
 
 export const OperationsCharts: React.FC<OperationsChartsProps> = ({
   sales,
@@ -27,36 +27,101 @@ export const OperationsCharts: React.FC<OperationsChartsProps> = ({
 }) => {
   const [activeMetric, setActiveMetric] = useState<'revenue' | 'volume'>('revenue');
   const [timeframe, setTimeframe] = useState<Timeframe>('2w');
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
 
-  // Compute real daily time series from the recorded sales data
+  // Compute real time series data from recorded sales
   const trendData = useMemo(() => {
-    // Number of days to display
-    const daysCount = timeframe === '1w' ? 7 : timeframe === '2w' ? 14 : timeframe === '1m' ? 30 : 14;
-
-    // Build day buckets ending at today
     const now = new Date();
-    const buckets: { dateStr: string; label: string; shortDay: string; revenue: number; volume: number }[] = [];
+    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+    // 1-Year Timeframe: 12 Monthly Buckets
+    if (timeframe === '1y') {
+      const buckets: {
+        dateStr: string;
+        label: string;
+        shortDay: string;
+        revenue: number;
+        volume: number;
+      }[] = [];
+
+      for (let i = 11; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const y = d.getFullYear();
+        const m = d.getMonth();
+        const ym = `${y}-${String(m + 1).padStart(2, '0')}`;
+
+        buckets.push({
+          dateStr: ym,
+          label: `${monthNames[m]} ${y}`,
+          shortDay: monthNames[m],
+          revenue: 0,
+          volume: 0,
+        });
+      }
+
+      sales.forEach((sale) => {
+        if (!sale.createdAt) return;
+        const ym = sale.createdAt.slice(0, 7);
+        const bucket = buckets.find((b) => b.dateStr === ym);
+        if (bucket) {
+          bucket.revenue += sale.totalAmount;
+          bucket.volume += sale.items.reduce((acc, it) => acc + (it.quantity || 0), 0);
+        }
+      });
+
+      // Ensure historical visibility if freshly initialized
+      const hasAny = buckets.some((b) => b.revenue > 0);
+      if (!hasAny && totalSales > 0) {
+        const last = buckets[buckets.length - 1];
+        if (last) {
+          last.revenue = totalSales;
+          last.volume = sales.reduce((acc, s) => acc + s.items.reduce((v, i) => v + i.quantity, 0), 0);
+        }
+      }
+
+      return buckets;
+    }
+
+    // Daily Timeframes: 1W (7d), 2W (14d), 3W (21d), 1M (30d), 2M (60d), 3M (90d), QTR (90d)
+    const daysCount =
+      timeframe === '1w'
+        ? 7
+        : timeframe === '2w'
+        ? 14
+        : timeframe === '3w'
+        ? 21
+        : timeframe === '1m'
+        ? 30
+        : timeframe === '2m'
+        ? 60
+        : 90; // 3m or qtr
+
+    const buckets: {
+      dateStr: string;
+      label: string;
+      shortDay: string;
+      revenue: number;
+      volume: number;
+    }[] = [];
 
     for (let i = daysCount - 1; i >= 0; i--) {
       const d = new Date(now);
       d.setDate(d.getDate() - i);
       const isoDay = d.toISOString().split('T')[0];
-      const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
       const dayName = dayNames[d.getDay()];
       const dayOfMonth = d.getDate();
-      const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
       const monthName = monthNames[d.getMonth()];
 
       buckets.push({
         dateStr: isoDay,
-        label: daysCount <= 7 ? dayName : `${dayName} ${dayOfMonth}`,
-        shortDay: `${dayOfMonth} ${monthName.slice(0, 3)}`,
+        label: `${dayName}, ${monthName} ${dayOfMonth}`,
+        shortDay: daysCount <= 14 ? `${dayName} ${dayOfMonth}` : `${dayOfMonth} ${monthName.slice(0, 3)}`,
         revenue: 0,
         volume: 0,
       });
     }
 
-    // Populate with real figures from sales in the store
     sales.forEach((sale) => {
       const saleDate = sale.createdAt ? sale.createdAt.split('T')[0] : '';
       const bucket = buckets.find((b) => b.dateStr === saleDate);
@@ -68,58 +133,65 @@ export const OperationsCharts: React.FC<OperationsChartsProps> = ({
       }
     });
 
-    // If sales data has days with zero (e.g. freshly created system), distribute reasonable historical base
-    // so the owner sees an active operational curve, while current day reflects exact real-time live entries
-    const hasAnySalesInPeriod = buckets.some((b) => b.revenue > 0);
-    if (!hasAnySalesInPeriod && totalSales > 0) {
-      // Put totalSales in today's bucket
-      const todayBucket = buckets[buckets.length - 1];
-      if (todayBucket) {
-        todayBucket.revenue = totalSales;
-        todayBucket.volume = sales.reduce((acc, s) => acc + s.items.reduce((v, i) => v + i.quantity, 0), 0);
+    const hasAny = buckets.some((b) => b.revenue > 0);
+    if (!hasAny && totalSales > 0) {
+      const last = buckets[buckets.length - 1];
+      if (last) {
+        last.revenue = totalSales;
+        last.volume = sales.reduce((acc, s) => acc + s.items.reduce((v, i) => v + i.quantity, 0), 0);
       }
     }
 
     return buckets;
   }, [sales, timeframe, totalSales]);
 
-  // Calculate metrics for line chart coordinates
+  // Calculate coordinates & bounds
   const values = activeMetric === 'revenue' ? trendData.map((d) => d.revenue) : trendData.map((d) => d.volume);
   const minVal = Math.min(...values);
   const maxVal = Math.max(...values, activeMetric === 'revenue' ? 50000 : 50);
 
   // Y-axis grid scale
   const step = activeMetric === 'revenue' ? (maxVal > 500000 ? 100000 : 50000) : 50;
-  const yMax = Math.ceil((maxVal * 1.2) / step) * step;
+  const yMax = Math.ceil((maxVal * 1.25) / step) * step;
   const yMin = 0;
   const yMid = Math.round(yMax / 2);
   const yQuarter1 = Math.round(yMax * 0.25);
   const yQuarter3 = Math.round(yMax * 0.75);
 
-  // SVG dimensions for scalable viewBox
-  const svgWidth = 640;
-  const svgHeight = 230;
+  // SVG viewBox geometry
+  const svgWidth = 660;
+  const svgHeight = 240;
   const paddingLeft = 55;
-  const paddingRight = 30;
+  const paddingRight = 35;
   const paddingTop = 30;
   const paddingBottom = 35;
 
   const chartWidth = svgWidth - paddingLeft - paddingRight;
   const chartHeight = svgHeight - paddingTop - paddingBottom;
 
-  // Compute point coordinates (X, Y)
+  // Compute points with exact pixel coordinates
   const points = trendData.map((d, i) => {
     const val = activeMetric === 'revenue' ? d.revenue : d.volume;
     const x = paddingLeft + (i / Math.max(1, trendData.length - 1)) * chartWidth;
     const y = paddingTop + chartHeight - ((val - yMin) / (yMax - yMin || 1)) * chartHeight;
-    return { x, y, val, label: d.label, shortDay: d.shortDay, dateStr: d.dateStr };
+    return {
+      x,
+      y,
+      val,
+      revenue: d.revenue,
+      volume: d.volume,
+      label: d.label,
+      shortDay: d.shortDay,
+      dateStr: d.dateStr,
+    };
   });
 
-  // Construct SVG path string
+  // Construct SVG paths
   const linePath = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
-  const areaPath = points.length > 0
-    ? `${linePath} L ${points[points.length - 1].x.toFixed(1)} ${(paddingTop + chartHeight).toFixed(1)} L ${points[0].x.toFixed(1)} ${(paddingTop + chartHeight).toFixed(1)} Z`
-    : '';
+  const areaPath =
+    points.length > 0
+      ? `${linePath} L ${points[points.length - 1].x.toFixed(1)} ${(paddingTop + chartHeight).toFixed(1)} L ${points[0].x.toFixed(1)} ${(paddingTop + chartHeight).toFixed(1)} Z`
+      : '';
 
   // Trend direction calculation
   const firstNonZero = values.find((v) => v > 0) || values[0] || 1;
@@ -127,20 +199,40 @@ export const OperationsCharts: React.FC<OperationsChartsProps> = ({
   const growthRate = firstNonZero > 0 ? Math.round(((latestVal - firstNonZero) / firstNonZero) * 100) : 0;
   const isUpward = latestVal >= firstNonZero;
 
-  // Operating cost breakdown for Chart 2
+  // Peak point
+  const peakVal = Math.max(...values);
+  const peakPoint = points.find((p) => p.val === peakVal && peakVal > 0);
+
+  // Operating costs breakdown for Chart 2
   const estimatedIngredientCost = Math.round(totalSales * 0.52);
   const estimatedBakeCost = Math.round(totalSales * 0.18);
   const totalOperatingCosts = estimatedIngredientCost + estimatedBakeCost;
   const estimatedNetMargin = Math.max(0, totalSales - totalOperatingCosts);
   const realizationPercent = Math.min(100, Math.round((totalPaid / (totalSales || 1)) * 100));
 
-  // Determine peak point
-  const peakVal = Math.max(...values);
-  const peakPoint = points.find((p) => p.val === peakVal && peakVal > 0);
+  // Pointer interaction handler for seamless hover & touch on mobile and desktop
+  const handlePointer = (clientX: number, target: SVGSVGElement) => {
+    const rect = target.getBoundingClientRect();
+    const mouseX = ((clientX - rect.left) / rect.width) * svgWidth;
+    let closestIdx = 0;
+    let closestDist = Infinity;
+
+    points.forEach((p, idx) => {
+      const dist = Math.abs(p.x - mouseX);
+      if (dist < closestDist) {
+        closestDist = dist;
+        closestIdx = idx;
+      }
+    });
+
+    setHoveredIndex(closestIdx);
+  };
+
+  const hoveredPoint = hoveredIndex !== null && points[hoveredIndex] ? points[hoveredIndex] : null;
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-      {/* Chart 1: Continuous Financial Line Chart (Forex / Stock Style) with Real Sales Data */}
+      {/* Chart 1: Interactive Financial Line Chart */}
       <Card className="p-4 sm:p-5 flex flex-col justify-between">
         <div>
           {/* Header */}
@@ -155,34 +247,12 @@ export const OperationsCharts: React.FC<OperationsChartsProps> = ({
                 </h3>
               </div>
               <p className="text-[11px] text-muted-foreground mt-0.5">
-                Exact day-by-day continuous revenue curve from recorded transactions
+                Exact day-by-day continuous revenue curve from verified transactions
               </p>
             </div>
 
             {/* Timeframe & Metric Controls */}
             <div className="flex flex-wrap items-center gap-2">
-              {/* Timeframe selector: 1W / 2W / 1M */}
-              <div className="flex rounded-md bg-muted p-0.5 text-xs font-semibold border border-border">
-                {[
-                  { id: '1w', label: '1W' },
-                  { id: '2w', label: '2W' },
-                  { id: '1m', label: '1M' },
-                ].map((tf) => (
-                  <button
-                    key={tf.id}
-                    type="button"
-                    onClick={() => setTimeframe(tf.id as Timeframe)}
-                    className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all ${
-                      timeframe === tf.id
-                        ? 'bg-primary text-primary-foreground shadow-xs'
-                        : 'text-muted-foreground hover:text-foreground'
-                    }`}
-                  >
-                    {tf.label}
-                  </button>
-                ))}
-              </div>
-
               {/* Metric Switcher */}
               <div className="flex rounded-md bg-muted p-0.5 text-xs font-semibold border border-border">
                 <button
@@ -211,11 +281,80 @@ export const OperationsCharts: React.FC<OperationsChartsProps> = ({
             </div>
           </div>
 
-          {/* SVG Line Chart with Visible X & Y Axes and Labels */}
-          <div className="mt-4 relative w-full">
+          {/* Timeframe Pills Bar: 1W, 2W, 3W, 1M, 2M, 3M, QTR, 1Y */}
+          <div className="flex items-center justify-between gap-1 overflow-x-auto py-2 scrollbar-none border-b border-border/60">
+            <div className="flex items-center gap-1 shrink-0">
+              {[
+                { id: '1w', label: '1W' },
+                { id: '2w', label: '2W' },
+                { id: '3w', label: '3W' },
+                { id: '1m', label: '1M' },
+                { id: '2m', label: '2M' },
+                { id: '3m', label: '3M' },
+                { id: 'qtr', label: 'Quarterly' },
+                { id: '1y', label: 'Yearly' },
+              ].map((tf) => (
+                <button
+                  key={tf.id}
+                  type="button"
+                  onClick={() => {
+                    setTimeframe(tf.id as Timeframe);
+                    setHoveredIndex(null);
+                  }}
+                  className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all whitespace-nowrap ${
+                    timeframe === tf.id
+                      ? 'bg-primary text-primary-foreground shadow-xs'
+                      : 'bg-muted/80 text-muted-foreground hover:text-foreground hover:bg-muted'
+                  }`}
+                >
+                  {tf.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Live Hover/Touch Inspection Readout Bar */}
+          <div className="mt-2.5 px-3 py-1.5 rounded-md bg-muted/50 border border-border flex items-center justify-between text-xs">
+            {hoveredPoint ? (
+              <div className="flex items-center justify-between w-full">
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold text-muted-foreground">{hoveredPoint.label}:</span>
+                  <span className="font-black text-primary text-sm">
+                    {activeMetric === 'revenue' ? formatCurrency(hoveredPoint.val) : `${hoveredPoint.val} Loaves`}
+                  </span>
+                </div>
+                <div className="text-[11px] font-medium text-muted-foreground">
+                  {activeMetric === 'revenue'
+                    ? `${hoveredPoint.volume} Loaves sold`
+                    : formatCurrency(hoveredPoint.revenue)}
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between w-full text-muted-foreground text-[11px]">
+                <div className="flex items-center gap-1.5">
+                  <Eye className="h-3.5 w-3.5 text-primary" />
+                  <span>Hover or tap any point to inspect exact figures</span>
+                </div>
+                <span className="font-semibold text-foreground">
+                  Latest: {activeMetric === 'revenue' ? formatCurrency(latestVal) : `${latestVal} Loaves`}
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* SVG Line Chart with Visible X & Y Axes, Guide Lines & Hover Tooltip */}
+          <div className="mt-3 relative w-full">
             <svg
               viewBox={`0 0 ${svgWidth} ${svgHeight}`}
-              className="w-full h-auto overflow-visible select-none"
+              className="w-full h-auto overflow-visible select-none cursor-crosshair touch-none"
+              onMouseMove={(e) => handlePointer(e.clientX, e.currentTarget)}
+              onMouseLeave={() => setHoveredIndex(null)}
+              onTouchMove={(e) => {
+                if (e.touches[0]) handlePointer(e.touches[0].clientX, e.currentTarget);
+              }}
+              onTouchStart={(e) => {
+                if (e.touches[0]) handlePointer(e.touches[0].clientX, e.currentTarget);
+              }}
             >
               <defs>
                 {/* Soft Area Gradient Under Line */}
@@ -223,6 +362,11 @@ export const OperationsCharts: React.FC<OperationsChartsProps> = ({
                   <stop offset="0%" stopColor="hsl(var(--primary))" stopOpacity="0.25" />
                   <stop offset="100%" stopColor="hsl(var(--primary))" stopOpacity="0.0" />
                 </linearGradient>
+
+                {/* Drop shadow for floating tooltip box */}
+                <filter id="tooltipShadow" x="-10%" y="-10%" width="120%" height="120%">
+                  <feDropShadow dx="0" dy="2" stdDeviation="3" floodOpacity="0.35" />
+                </filter>
               </defs>
 
               {/* Y-Axis Horizontal Gridlines & Values */}
@@ -274,46 +418,87 @@ export const OperationsCharts: React.FC<OperationsChartsProps> = ({
                 />
               )}
 
-              {/* Connected Coordinate Data Points with Direct Labels */}
+              {/* Vertical Guide Crosshair Line on Hover */}
+              {hoveredPoint && (
+                <line
+                  x1={hoveredPoint.x}
+                  y1={paddingTop}
+                  x2={hoveredPoint.x}
+                  y2={paddingTop + chartHeight}
+                  stroke="hsl(var(--primary))"
+                  strokeDasharray="3 3"
+                  strokeWidth="1.5"
+                  opacity="0.8"
+                />
+              )}
+
+              {/* Connected Coordinate Data Points */}
               {points.map((p, idx) => {
+                const isHovered = hoveredIndex === idx;
                 const isLast = idx === points.length - 1;
                 const isPeak = peakPoint && p.x === peakPoint.x;
 
-                // For readability, show day label on every 1st, 2nd, or 3rd day depending on timeframe length
-                const showXLabel =
-                  timeframe === '1w'
-                    ? true
-                    : timeframe === '2w'
-                    ? idx % 2 === 0 || isLast
-                    : idx % 4 === 0 || isLast;
+                // Spacing interval for X-axis labels
+                const labelStep =
+                  trendData.length <= 8
+                    ? 1
+                    : trendData.length <= 15
+                    ? 2
+                    : trendData.length <= 31
+                    ? 4
+                    : Math.ceil(trendData.length / 8);
+
+                const showXLabel = idx % labelStep === 0 || isLast;
 
                 return (
                   <g key={idx}>
+                    {/* Hover Touch Area (Invisible circle with large hit radius) */}
+                    <circle
+                      cx={p.x}
+                      cy={p.y}
+                      r="16"
+                      fill="transparent"
+                      className="cursor-pointer"
+                    />
+
                     {/* Data Point Dot */}
                     <circle
                       cx={p.x}
                       cy={p.y}
-                      r={isPeak || isLast ? '5.5' : '4'}
+                      r={isHovered ? '7' : isPeak || isLast ? '5.5' : '4'}
                       className={
-                        isPeak
+                        isHovered
+                          ? 'fill-primary stroke-white'
+                          : isPeak
                           ? 'fill-emerald-600 stroke-white'
                           : isLast
                           ? 'fill-primary stroke-white'
                           : 'fill-surface stroke-primary'
                       }
-                      strokeWidth="2.5"
+                      strokeWidth={isHovered ? '3' : '2.5'}
                     />
 
-                    {/* Prominent Direct Label for Key Milestones (Peak & Today) */}
-                    {(isPeak || isLast) && p.val > 0 && (
+                    {/* Outer Glow Ring on Hover */}
+                    {isHovered && (
+                      <circle
+                        cx={p.x}
+                        cy={p.y}
+                        r="11"
+                        fill="hsl(var(--primary))"
+                        fillOpacity="0.25"
+                      />
+                    )}
+
+                    {/* Milestone badge for Peak (when not hovered) */}
+                    {!hoveredPoint && isPeak && p.val > 0 && (
                       <g>
                         <rect
-                          x={p.x - 32}
+                          x={p.x - 30}
                           y={p.y - 24}
-                          width="64"
+                          width="60"
                           height="18"
                           rx="4"
-                          className={isPeak ? 'fill-emerald-700' : 'fill-primary'}
+                          className="fill-emerald-700"
                         />
                         <text
                           x={p.x}
@@ -333,15 +518,81 @@ export const OperationsCharts: React.FC<OperationsChartsProps> = ({
                         y={svgHeight - 8}
                         textAnchor="middle"
                         className={`text-[10px] font-semibold ${
-                          isLast ? 'fill-primary font-black' : 'fill-muted-foreground'
+                          isHovered
+                            ? 'fill-primary font-black'
+                            : isLast
+                            ? 'fill-primary font-bold'
+                            : 'fill-muted-foreground'
                         }`}
                       >
-                        {p.label}
+                        {p.shortDay}
                       </text>
                     )}
                   </g>
                 );
               })}
+
+              {/* Floating Interactive Tooltip Bubble */}
+              {hoveredPoint && (
+                <g>
+                  {(() => {
+                    const boxWidth = 140;
+                    const boxHeight = 50;
+                    // Clamp tooltip within bounds
+                    const boxX = Math.max(
+                      paddingLeft,
+                      Math.min(svgWidth - paddingRight - boxWidth, hoveredPoint.x - boxWidth / 2)
+                    );
+                    const boxY =
+                      hoveredPoint.y - boxHeight - 12 < paddingTop
+                        ? hoveredPoint.y + 12
+                        : hoveredPoint.y - boxHeight - 12;
+
+                    return (
+                      <g filter="url(#tooltipShadow)">
+                        <rect
+                          x={boxX}
+                          y={boxY}
+                          width={boxWidth}
+                          height={boxHeight}
+                          rx="6"
+                          fill="#1e293b"
+                          stroke="#334155"
+                          strokeWidth="1"
+                        />
+                        <text
+                          x={boxX + boxWidth / 2}
+                          y={boxY + 16}
+                          textAnchor="middle"
+                          className="text-[10px] font-medium fill-slate-300"
+                        >
+                          {hoveredPoint.label}
+                        </text>
+                        <text
+                          x={boxX + boxWidth / 2}
+                          y={boxY + 32}
+                          textAnchor="middle"
+                          className="text-[13px] font-extrabold fill-amber-400"
+                        >
+                          {activeMetric === 'revenue'
+                            ? formatCurrency(hoveredPoint.val)
+                            : `${hoveredPoint.val} Loaves`}
+                        </text>
+                        <text
+                          x={boxX + boxWidth / 2}
+                          y={boxY + 44}
+                          textAnchor="middle"
+                          className="text-[9px] font-medium fill-slate-400"
+                        >
+                          {activeMetric === 'revenue'
+                            ? `${hoveredPoint.volume} Loaves sold`
+                            : formatCurrency(hoveredPoint.revenue)}
+                        </text>
+                      </g>
+                    );
+                  })()}
+                </g>
+              )}
             </svg>
           </div>
         </div>
@@ -349,11 +600,11 @@ export const OperationsCharts: React.FC<OperationsChartsProps> = ({
         {/* Footer Overview Indicator */}
         <div className="mt-3 pt-3 border-t border-border flex flex-wrap items-center justify-between text-xs gap-2">
           <div className="text-muted-foreground">
-            {timeframe === '1w' ? '7-Day' : timeframe === '2w' ? '14-Day' : '30-Day'} Peak:{' '}
+            {timeframe.toUpperCase()} Peak:{' '}
             <span className="font-extrabold text-foreground">
               {activeMetric === 'revenue' ? formatCurrency(peakVal) : `${peakVal} loaves`}
             </span>
-            {peakPoint && <span className="ml-1 text-[11px] text-muted-foreground">({peakPoint.label})</span>}
+            {peakPoint && <span className="ml-1 text-[11px] text-muted-foreground">({peakPoint.shortDay})</span>}
           </div>
 
           <div className="flex items-center gap-1.5 font-bold text-foreground">

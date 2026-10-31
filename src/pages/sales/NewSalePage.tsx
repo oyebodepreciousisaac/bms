@@ -331,8 +331,8 @@ export const NewSalePage: React.FC = () => {
           </div>
 
           {/* Category Filter Pills & Store Owner Custom Bread Action */}
-          <div className="flex items-center justify-between gap-2 overflow-x-auto pb-1 scrollbar-none">
-            <div className="flex items-center gap-1.5 shrink-0">
+          <div className="flex items-center justify-between gap-2 overflow-x-auto pt-1 pb-3 scrollbar-none mb-1">
+            <div className="flex items-center gap-2 shrink-0 py-1">
               {categories.map((cat) => {
                 const count = cat === 'All' ? products.length : products.filter((p) => p.category === cat).length;
                 const isSelected = selectedCategory === cat;
@@ -341,18 +341,18 @@ export const NewSalePage: React.FC = () => {
                     key={cat}
                     type="button"
                     onClick={() => setSelectedCategory(cat)}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all whitespace-nowrap min-h-[34px] ${
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all whitespace-nowrap min-h-[36px] ${
                       isSelected
-                        ? 'bg-primary text-primary-foreground font-bold shadow-xs'
+                        ? 'bg-primary text-primary-foreground font-bold shadow-xs ring-2 ring-primary/20'
                         : 'bg-muted text-muted-foreground hover:bg-border active:scale-95'
                     }`}
                   >
                     <span>{cat}</span>
                     <span
-                      className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                      className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
                         isSelected
                           ? 'bg-white/20 text-white'
-                          : 'bg-background/80 text-muted-foreground'
+                          : 'bg-background/90 text-muted-foreground'
                       }`}
                     >
                       {count}
@@ -368,7 +368,7 @@ export const NewSalePage: React.FC = () => {
               variant="outline"
               size="sm"
               onClick={() => setIsAddBreadModalOpen(true)}
-              className="shrink-0 h-8 text-xs gap-1.5 text-primary border-primary/40 bg-primary-light/30 hover:bg-primary-light font-bold"
+              className="shrink-0 h-9 text-xs gap-1.5 text-primary border-primary/40 bg-primary-light/40 hover:bg-primary-light font-bold"
               title="Store owner can define any bread style (Sardine, Agege, etc.)"
             >
               <PlusCircle className="h-3.5 w-3.5 text-primary" />
@@ -698,9 +698,9 @@ export const NewSalePage: React.FC = () => {
         </div>
       )}
 
-      {/* Post-Sale Action Modal / Quick Access */}
-      {completedSale && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
+      {/* Post-Sale Action Modal / Quick Access (Only when neither receipt nor invoice modal is open) */}
+      {completedSale && !showReceipt && !showInvoice && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200 no-print">
           <div className="bg-surface rounded-xl border border-border p-6 max-w-sm w-full space-y-4 shadow-2xl text-center">
             <div className="h-12 w-12 rounded-full bg-success-light text-success flex items-center justify-center mx-auto">
               <CheckCircle2 className="h-6 w-6" />
